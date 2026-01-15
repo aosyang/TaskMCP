@@ -219,7 +219,7 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
         onMouseEnter={() => !isMobile && setIsHovering(true)}
         onMouseLeave={() => !isMobile && setIsHovering(false)}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: isMobile ? '12px' : '8px', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
           <span 
             className="drag-handle" 
             {...attributes} 
@@ -277,6 +277,7 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
             onChange={() => onToggle(task.id)}
             aria-label={`Mark task "${task.task}" as ${task.done ? 'incomplete' : 'complete'}`}
           />
+          <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'normal', alignSelf: 'flex-start', marginTop: '2px' }}>#{task.id}</span>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
             {isEditing ? (
               <input
@@ -304,7 +305,6 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
                     minWidth: 0
                   }}
                 >
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginRight: '6px', fontWeight: 'normal' }}>#{task.id}</span>
                   {task.is_current && <span style={{ fontSize: '12px', marginRight: '6px' }} aria-label="Current task">▶️</span>}
                   {task.task || '(Untitled task)'}
                 </span>
@@ -332,8 +332,7 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
                       border: 'none',
                       padding: 0,
                       textAlign: 'left',
-                      touchAction: 'manipulation',
-                      minHeight: '24px'
+                      touchAction: 'manipulation'
                     }}
                     title={showComments ? "Hide comments" : "Show comments"}
                   >
