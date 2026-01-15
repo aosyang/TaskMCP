@@ -1,0 +1,6 @@
+# 服务器配置
+# host: 绑定地址（bind address）
+#   - localhost 或 127.0.0.1: 只允许本机访问
+#   - 0.0.0.0: 绑定到所有网络接口（允许局域网和其他设备访问）
+host = "localhost"
+port = 5000

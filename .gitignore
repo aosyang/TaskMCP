@@ -1,0 +1,17 @@
+# Database
+todos.db
+todos.db.backup-*
+workspaces/
+
+# Node modules
+node_modules/
+
+# Build output
+static/app.js
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Environment
+.env

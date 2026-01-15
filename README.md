@@ -1,0 +1,169 @@
+# TaskMCP
+
+A multi-workspace task management system with hierarchical structure, drag-and-drop sorting, real-time synchronization, and MCP server integration for AI agents to manage tasks through natural language.
+
+## Features
+
+### Web Interface (http://localhost:5000)
+- **Multi-workspace support** - Each workspace has an independent database
+- Hierarchical task structure (unlimited nested subtasks)
+- Drag-and-drop sorting
+- Task completion toggle
+- Task comments/notes (Markdown support)
+- Inline task editing
+- WebSocket real-time synchronization (multi-client updates)
+- Two view modes: List view and Canvas view
+
+### MCP Server (http://localhost:8000)
+
+**Workspace Management Tools:**
+- `get_current_workspace_name` - Get current workspace name
+- `list_all_workspaces` - List all workspaces
+- `switch_workspace` - Switch workspace (auto-creates if not exists)
+- `create_workspace` - Create new workspace
+- `delete_workspace` - Delete workspace
+- `rename_workspace` - Rename workspace
+
+**Task Management Tools:**
+- `list_tasks` - List all tasks in current workspace (hierarchical display)
+- `add_task` - Add new task (can specify parent_id for subtasks)
+- `update_task` - Update task description or comments
+- `toggle_task` - Toggle completion status
+- `delete_task` - Delete task and all subtasks
+- `get_task` - Get task details
+- `search_tasks` - Search tasks
+- `move_task` - Move task position
+- `set_current_task` - Set current working task
+- `clear_current_task` - Clear current working task
+- `get_current_task` - Get current working task
+
+## Tech Stack
+
+**Backend:**
+- Flask - Web framework
+- Flask-SocketIO - WebSocket real-time communication
+- SQLite3 - Database
+- FastMCP - MCP server framework
+
+**Frontend:**
+- React 18 + TypeScript
+- @dnd-kit - Drag and drop sorting
+- Socket.IO Client - Real-time updates
+- esbuild - Build tool
+
+## Installation & Setup
+
+### 1. Install Dependencies
+
+```bash
+# Python dependencies
+pip install flask flask-socketio fastmcp
+
+# Python < 3.11 requires TOML support
+pip install tomli
+
+# Node.js dependencies
+npm install
+```
+
+### 2. Configure Server Access Mode (Optional)
+
+Edit `server_config.toml` to configure server access:
+
+```toml
+host = "localhost"
+port = 5000
+```
+
+**Configuration:**
+- `host`: Bind address (default: `localhost`)
+  - `localhost` or `127.0.0.1` - Local access only
+  - `0.0.0.0` - Bind to all network interfaces (allow LAN and other devices)
+- `port`: Server port number (default: 5000)
+
+**Examples:**
+- Local access only: `host = "localhost"`
+- Allow LAN access: `host = "0.0.0.0"`
+
+**Note:** Python 3.11+ has built-in TOML support. Python < 3.11 requires: `pip install tomli`
+
+### 3. Start Server
+
+```bash
+# Start both Web server and MCP server
+python app.py
+```
+
+After starting:
+- Web Interface: 
+  - Local: http://localhost:5000
+  - Network: http://<your-ip>:5000 (shown on startup if network access enabled)
+- MCP Server: http://localhost:8000/mcp
+
+### 4. Configure MCP Client
+
+For VS Code, configure `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "fastmcp-http": {
+      "type": "http",
+      "url": "http://localhost:8000/mcp"
+    }
+  }
+}
+```
+
+## Usage Examples
+
+### Workspace Management
+
+In Web Interface:
+1. Click workspace dropdown in top-right corner
+2. Click "Manage" to open workspace manager
+3. Create, rename, or delete workspaces
+
+Via MCP/AI Agent:
+- "What is the current workspace?"
+- "List all workspaces"
+- "Switch to project-a workspace"
+- "Create a new workspace called personal"
+- "Rename workspace dev to development"
+- "Delete old-workspace"
+
+### AI Agent Natural Language Operations
+
+- "Show me what tasks I need to complete"
+- "Add a task: Complete project documentation"
+- "Mark task #1 as done"
+- "Search for all tasks containing 'documentation'"
+- "Delete task #5"
+- "Can this task be broken down into more subtasks?"
+
+### Real-time Synchronization
+
+- Changes made in Web interface or via AI Agent are instantly synchronized
+- Browser updates automatically without refresh
+- Multiple browser windows/tabs stay in sync in real-time
+- Workspace switches are synchronized across all clients
+- Works with multiple devices on the same LAN
+
+## Database Structure
+
+Each workspace corresponds to an independent SQLite database file in the `workspaces/` directory:
+- `workspaces/default.db` - Default workspace
+- `workspaces/project-a.db` - Custom workspace
+- `workspaces/personal.db` - Personal workspace
+- ...
+
+Current active workspace is saved in `workspaces/workspace_config.json`.
+
+## Development
+
+### Modify Frontend Code
+
+```bash
+# Edit src/app.tsx then rebuild
+node build.js
+```
