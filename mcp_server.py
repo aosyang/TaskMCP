@@ -1,5 +1,6 @@
 import sqlite3
 import os
+from typing import Optional
 from fastmcp import FastMCP
 from notify import notify_tasks_updated, notify_workspace_changed
 from workspace_manager import (
@@ -13,6 +14,9 @@ from workspace_manager import (
 )
 
 # Initialize FastMCP server
+# Note: FastMCP should handle type coercion by default, but Cursor's MCP client
+# may serialize integers as strings. The function implementations include
+# string-to-int conversion as a fallback.
 mcp = FastMCP("Task Manager")
 
 def set_current_workspace(workspace_name):
@@ -156,7 +160,7 @@ def list_tasks() -> str:
     return header + "\n".join(result_lines) if result_lines else f"No tasks found in workspace '{workspace}'"
 
 @mcp.tool()
-def add_task(task: str, parent_id: int | None = None, color: str = '') -> str:
+def add_task(task: str, parent_id: Optional[int] = None, color: str = '') -> str:
     """Add a new task item to current workspace
     
     Args:
@@ -164,6 +168,10 @@ def add_task(task: str, parent_id: int | None = None, color: str = '') -> str:
         parent_id: Optional parent task ID to create a subtask
         color: Optional background color (hex or color name)
     """
+    # Convert string parameters to int if needed (FastMCP may serialize ints as strings)
+    if parent_id is not None:
+        parent_id = int(parent_id) if isinstance(parent_id, str) else parent_id
+    
     conn = get_db()
     cursor = conn.cursor()
     
@@ -393,78 +401,21 @@ def get_current_task() -> str:
     
     return f"Current Task: #{task['id']} {parent}\nStatus: {status}\nTask: {task['task']}{comments}"
 
-@mcp.tool()
-def move_task(task_id: int, after_task_id: int | None = None, as_child_of: int | None = None, position: int | None = None) -> str:
-    """Move a task to a new position or parent
-    
-    Args:
-        task_id: The ID of the task to move
-        after_task_id: Move after this task (same parent), e.g., "move xxx after yyy"
-        as_child_of: Move as child of this parent, e.g., "move xxx to be child of yyy"
-        position: Specific position (0 for first), use with as_child_of or alone to reorder within same parent
-    
-    Examples:
-        - move_task(5, as_child_of=3, position=0) - "move task 5 to be first child of task 3"
-        - move_task(5, after_task_id=7) - "move task 5 after task 7"
-        - move_task(5, position=0) - "move task 5 to first position (in current parent)"
-    """
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Get the task being moved
+# Helper functions for task movement operations
+def _convert_to_int(value):
+    """Convert string to int if needed (FastMCP may serialize ints as strings)"""
+    return int(value) if isinstance(value, str) else value
+
+def _get_task_info(cursor, task_id):
+    """Get task information and validate it exists"""
     cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
     task = cursor.fetchone()
     if not task:
-        conn.close()
-        return f"Error: Task #{task_id} not found"
-    
-    old_parent_id = task["parent_id"]
-    old_position = task["position"]
-    
-    # Determine new parent and position
-    if after_task_id is not None:
-        # Move after another task (inherits its parent)
-        cursor.execute("SELECT parent_id, position FROM tasks WHERE id = ?", (after_task_id,))
-        target = cursor.fetchone()
-        if not target:
-            conn.close()
-            return f"Error: Task #{after_task_id} not found"
-        
-        new_parent_id = target["parent_id"]
-        new_position = target["position"] + 1
-        
-    elif as_child_of is not None:
-        # Move as child of a specific parent
-        if as_child_of == task_id:
-            conn.close()
-            return f"Error: Cannot move task #{task_id} to be its own child"
-        
-        # Check parent exists (or is None for top-level)
-        if as_child_of is not None:
-            cursor.execute("SELECT id FROM tasks WHERE id = ?", (as_child_of,))
-            if not cursor.fetchone():
-                conn.close()
-                return f"Error: Parent task #{as_child_of} not found"
-        
-        new_parent_id = as_child_of
-        
-        if position is not None:
-            new_position = position
-        else:
-            # Append to end
-            cursor.execute("SELECT COALESCE(MAX(position), -1) + 1 FROM tasks WHERE parent_id IS ?", (new_parent_id,))
-            new_position = cursor.fetchone()[0]
-    
-    elif position is not None:
-        # Move within same parent to specific position
-        new_parent_id = old_parent_id
-        new_position = position
-    
-    else:
-        conn.close()
-        return "Error: Must specify after_task_id, as_child_of, or position"
-    
-    # Shift positions in old location (close the gap)
+        return None
+    return task
+
+def _shift_positions_for_move(cursor, old_parent_id, old_position, new_parent_id, new_position):
+    """Shift positions when moving a task within same parent or to different parent"""
     if old_parent_id == new_parent_id:
         # Moving within same parent
         if new_position > old_position:
@@ -492,20 +443,159 @@ def move_task(task_id: int, after_task_id: int | None = None, as_child_of: int |
             "UPDATE tasks SET position = position + 1 WHERE parent_id IS ? AND position >= ?",
             (new_parent_id, new_position)
         )
-    
-    # Update the moved task
+    return new_position
+
+def _update_task_position(cursor, task_id, new_parent_id, new_position):
+    """Update task's parent_id and position"""
     cursor.execute(
         "UPDATE tasks SET parent_id = ?, position = ? WHERE id = ?",
         (new_parent_id, new_position, task_id)
     )
+
+def _finalize_move(conn, task_id, new_position, new_parent_id):
+    """Commit transaction, close connection, and notify updates"""
+    conn.commit()
+    conn.close()
+    notify_tasks_updated()
+    parent_desc = f"child of #{new_parent_id}" if new_parent_id else "top-level"
+    return f"Moved task #{task_id} to position {new_position} as {parent_desc}"
+
+@mcp.tool()
+def move_task_as_child(task_id: int, as_child_of: int) -> str:
+    """Move a task to be a child of another task
+    
+    Args:
+        task_id: The ID of the task to move
+        as_child_of: The ID of the parent task (required, not nullable)
+    
+    Examples:
+        - move_task_as_child(5, 3) - "move task 5 to be child of task 3"
+    """
+    task_id = _convert_to_int(task_id)
+    as_child_of = _convert_to_int(as_child_of)
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Get the task being moved
+    task = _get_task_info(cursor, task_id)
+    if not task:
+        conn.close()
+        return f"Error: Task #{task_id} not found"
+    
+    old_parent_id = task["parent_id"]
+    old_position = task["position"]
+    
+    # Validate parent task
+    if as_child_of == task_id:
+        conn.close()
+        return f"Error: Cannot move task #{task_id} to be its own child"
+    
+    cursor.execute("SELECT id FROM tasks WHERE id = ?", (as_child_of,))
+    if not cursor.fetchone():
+        conn.close()
+        return f"Error: Parent task #{as_child_of} not found"
+    
+    new_parent_id = as_child_of
+    
+    # Get position for new parent
+    cursor.execute("SELECT COALESCE(MAX(position), -1) + 1 FROM tasks WHERE parent_id IS ?", (new_parent_id,))
+    new_position = cursor.fetchone()[0]
+    
+    # Shift positions in old location (close the gap)
+    new_position = _shift_positions_for_move(cursor, old_parent_id, old_position, new_parent_id, new_position)
+    
+    # Update the moved task
+    _update_task_position(cursor, task_id, new_parent_id, new_position)
+    
+    result = _finalize_move(conn, task_id, new_position, new_parent_id)
+    return f"Moved task #{task_id} to be child of task #{as_child_of}"
+
+@mcp.tool()
+def move_task_after(task_id: int, after_task_id: int) -> str:
+    """Move a task to be after another task (same parent)
+    
+    Args:
+        task_id: The ID of the task to move
+        after_task_id: Move after this task (same parent), e.g., "move xxx after yyy"
+    
+    Examples:
+        - move_task_after(5, 7) - "move task 5 after task 7"
+    """
+    task_id = _convert_to_int(task_id)
+    after_task_id = _convert_to_int(after_task_id)
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Get the task being moved
+    task = _get_task_info(cursor, task_id)
+    if not task:
+        conn.close()
+        return f"Error: Task #{task_id} not found"
+    
+    old_parent_id = task["parent_id"]
+    old_position = task["position"]
+    
+    # Move after another task (inherits its parent)
+    target = _get_task_info(cursor, after_task_id)
+    if not target:
+        conn.close()
+        return f"Error: Task #{after_task_id} not found"
+    
+    new_parent_id = target["parent_id"]
+    new_position = target["position"] + 1
+    
+    # Shift positions in old location (close the gap)
+    new_position = _shift_positions_for_move(cursor, old_parent_id, old_position, new_parent_id, new_position)
+    
+    # Update the moved task
+    _update_task_position(cursor, task_id, new_parent_id, new_position)
     
     conn.commit()
     conn.close()
-    
     notify_tasks_updated()
     
     parent_desc = f"child of #{new_parent_id}" if new_parent_id else "top-level"
-    return f"Moved task #{task_id} to position {new_position} as {parent_desc}"
+    return f"Moved task #{task_id} to position {new_position} after task #{after_task_id} as {parent_desc}"
+
+@mcp.tool()
+def move_task(task_id: int, position: int) -> str:
+    """Move a task to a specific position within its current parent
+    
+    Args:
+        task_id: The ID of the task to move
+        position: Specific position (0 for first) to reorder within same parent
+    
+    Examples:
+        - move_task(5, 0) - "move task 5 to first position (in current parent)"
+    """
+    task_id = _convert_to_int(task_id)
+    position = _convert_to_int(position)
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Get the task being moved
+    task = _get_task_info(cursor, task_id)
+    if not task:
+        conn.close()
+        return f"Error: Task #{task_id} not found"
+    
+    old_parent_id = task["parent_id"]
+    old_position = task["position"]
+    
+    # Move within same parent to specific position
+    new_parent_id = old_parent_id
+    new_position = position
+    
+    # Shift positions in old location (close the gap)
+    new_position = _shift_positions_for_move(cursor, old_parent_id, old_position, new_parent_id, new_position)
+    
+    # Update the moved task
+    _update_task_position(cursor, task_id, new_parent_id, new_position)
+    
+    return _finalize_move(conn, task_id, new_position, new_parent_id)
 
 @mcp.tool()
 def find_dangling_tasks() -> str:
