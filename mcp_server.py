@@ -206,6 +206,10 @@ def update_task(task_id: int, task: str | None = None, comments: str | None = No
         task: New task description (optional)
         comments: New comments (optional, supports markdown: **bold**, *italic*, [links](url), lists, code, etc.)
         color: New background color (optional, hex or color name)
+    
+    Note:
+        If updating task comments repeatedly fails, try using update_task_comments_from_file
+        to update comments from a text file instead.
     """
     if task is None and comments is None and color is None:
         return "Error: Must provide task, comments, or color to update"
@@ -232,6 +236,48 @@ def update_task(task_id: int, task: str | None = None, comments: str | None = No
     
     notify_tasks_updated()
     return f"Updated task #{task_id}"
+
+@mcp.tool()
+def update_task_comments_from_file(task_id: int, file_path: str) -> str:
+    """Update a task's comments from a text file
+    
+    Args:
+        task_id: The ID of the task to update
+        file_path: Path to the text file containing the comments (supports markdown)
+    
+    Examples:
+        - update_task_comments_from_file(10, "comments.md") - Update task #10's comments from comments.md
+        - update_task_comments_from_file(5, "path/to/notes.txt") - Update task #5's comments from notes.txt
+    """
+    # Convert string to int if needed
+    task_id = int(task_id) if isinstance(task_id, str) else task_id
+    
+    # Check if file exists
+    if not os.path.exists(file_path):
+        return f"Error: File '{file_path}' not found"
+    
+    # Read file content
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            comments = f.read()
+    except Exception as e:
+        return f"Error: Failed to read file '{file_path}': {str(e)}"
+    
+    # Validate task exists
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM tasks WHERE id = ?", (task_id,))
+    if cursor.fetchone() is None:
+        conn.close()
+        return f"Error: Task #{task_id} not found"
+    
+    # Update task comments
+    cursor.execute("UPDATE tasks SET comments = ? WHERE id = ?", (comments, task_id))
+    conn.commit()
+    conn.close()
+    
+    notify_tasks_updated()
+    return f"Updated task #{task_id} comments from file '{file_path}'"
 
 @mcp.tool()
 def toggle_task(task_id: int) -> str:
