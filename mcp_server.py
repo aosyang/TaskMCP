@@ -159,15 +159,8 @@ def list_tasks() -> str:
     header = f"Tasks in workspace '{workspace}':\n"
     return header + "\n".join(result_lines) if result_lines else f"No tasks found in workspace '{workspace}'"
 
-@mcp.tool()
-def add_task(task: str, parent_id: Optional[int] = None, color: str = '') -> str:
-    """Add a new task item to current workspace
-    
-    Args:
-        task: The task description
-        parent_id: Optional parent task ID to create a subtask
-        color: Optional background color (hex or color name)
-    """
+def _add_task_impl(task: str, parent_id: int | None, color: str) -> str:
+    """Internal implementation for adding a task"""
     # Convert string parameters to int if needed (FastMCP may serialize ints as strings)
     if parent_id is not None:
         parent_id = int(parent_id) if isinstance(parent_id, str) else parent_id
@@ -196,6 +189,27 @@ def add_task(task: str, parent_id: Optional[int] = None, color: str = '') -> str
     
     notify_tasks_updated()
     return f"Added task #{task_id}: {task}"
+
+@mcp.tool()
+def add_task(task: str, color: str = '') -> str:
+    """Add a new top-level task item to current workspace
+    
+    Args:
+        task: The task description
+        color: Optional background color (hex or color name)
+    """
+    return _add_task_impl(task, None, color)
+
+@mcp.tool()
+def add_task_with_parent(task: str, parent_id: int, color: str = '') -> str:
+    """Add a new subtask item to current workspace
+    
+    Args:
+        task: The task description
+        parent_id: Parent task ID to create a subtask
+        color: Optional background color (hex or color name)
+    """
+    return _add_task_impl(task, parent_id, color)
 
 @mcp.tool()
 def update_task(task_id: int, task: str | None = None, comments: str | None = None, color: str | None = None) -> str:
