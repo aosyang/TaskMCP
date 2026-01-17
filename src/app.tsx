@@ -148,12 +148,50 @@ function App() {
     return null;
   };
 
+  const getStickyOffset = (): number => {
+    // Calculate the total height of sticky divs (Comments + Focus Mode if exists)
+    let offset = 0;
+    
+    // Find Comments div by searching for the div containing "Comments:" text
+    const mainContent = document.querySelector('#main-content');
+    if (mainContent) {
+      const allDivs = mainContent.querySelectorAll('div');
+      for (const div of allDivs) {
+        const style = window.getComputedStyle(div);
+        if (style.position === 'sticky' && div.textContent?.includes('Comments:')) {
+          offset += div.getBoundingClientRect().height;
+          break;
+        }
+      }
+      
+      // Find Focus Mode div by searching for the div containing "Focus Mode" text
+      if (focusedTaskId !== null) {
+        for (const div of allDivs) {
+          const style = window.getComputedStyle(div);
+          if (style.position === 'sticky' && div.textContent?.includes('Focus Mode')) {
+            offset += div.getBoundingClientRect().height;
+            break;
+          }
+        }
+      }
+    }
+    
+    return offset + 10; // Add 10px extra padding
+  };
+
   const scrollToCurrentTask = () => {
     const currentTask = findCurrentTask(tasks);
     if (currentTask) {
-      const element = document.querySelector(`[data-task-id="${currentTask.id}"]`);
+      const element = document.querySelector(`[data-task-id="${currentTask.id}"]`) as HTMLElement;
       if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const offset = getStickyOffset();
+        const elementTop = element.getBoundingClientRect().top + window.pageYOffset;
+        const offsetPosition = elementTop - offset;
+        
+        window.scrollTo({
+          top: offsetPosition,
+          behavior: 'smooth'
+        });
       }
     }
   };
@@ -225,9 +263,16 @@ function App() {
   };
 
   const scrollToTask = (id: number) => {
-    const element = document.querySelector(`[data-task-id="${id}"]`);
+    const element = document.querySelector(`[data-task-id="${id}"]`) as HTMLElement;
     if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const offset = getStickyOffset();
+      const elementTop = element.getBoundingClientRect().top + window.pageYOffset;
+      const offsetPosition = elementTop - offset;
+      
+      window.scrollTo({
+        top: offsetPosition,
+        behavior: 'smooth'
+      });
     }
   };
 
