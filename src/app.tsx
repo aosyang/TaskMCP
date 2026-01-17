@@ -132,7 +132,14 @@ function App() {
   };
 
   const handleSetCurrent = async (id: number) => {
-    await fetch(`/set_current/${id}`, { method: 'POST' });
+    const currentTask = findCurrentTask(tasks);
+    if (currentTask && currentTask.id === id) {
+      // If already current, clear it
+      await fetch('/clear_current', { method: 'POST' });
+    } else {
+      // Set as current
+      await fetch(`/set_current/${id}`, { method: 'POST' });
+    }
   };
 
 

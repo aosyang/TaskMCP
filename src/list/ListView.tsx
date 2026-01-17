@@ -355,10 +355,10 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
                     onSetCurrent(task.id);
                   }
                 }}
-                aria-label={`Set "${task.task}" as current task`}
-                title="Set as current task"
+                aria-label={task.is_current ? `Clear current task` : `Set "${task.task}" as current task`}
+                title={task.is_current ? "Clear current task" : "Set as current task"}
               >
-                ▶️
+                {task.is_current ? '⏹️' : '▶️'}
               </button>
               <button 
                 className="btn btn-focus" 
@@ -420,10 +420,10 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
                     onSetCurrent(task.id);
                   }
                 }}
-                aria-label={`Set "${task.task}" as current task`}
-                title="Set as current task"
+                aria-label={task.is_current ? `Clear current task` : `Set "${task.task}" as current task`}
+                title={task.is_current ? "Clear current task" : "Set as current task"}
               >
-                ▶️
+                {task.is_current ? '⏹️' : '▶️'}
               </button>
               <button 
                 className="btn btn-focus" 
