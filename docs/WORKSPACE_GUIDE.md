@@ -118,17 +118,17 @@ AI: "创建一个workspace叫做website-redesign"
 AI: "切换到website-redesign"
 AI: "添加任务：设计新的首页布局"
 AI: "添加任务：优化移动端体验"
-AI: "list my todos"  # 只显示website-redesign的任务
+AI: "list my tasks"  # 只显示website-redesign的任务
 ```
 
 #### 示例2：切换上下文
 ```
 # 正在工作区work中
-AI: "list todos"  # 看到工作任务
+AI: "list tasks"  # 看到工作任务
 
 # 切换到个人事务
 AI: "切换到personal workspace"
-AI: "list todos"  # 现在看到的是个人任务
+AI: "list tasks"  # 现在看到的是个人任务
 AI: "添加任务：周末去超市购物"
 ```
 
@@ -144,17 +144,17 @@ AI: "把completed重命名为archive-2024"  # 归档已完成的工作
 
 ### 文件结构
 ```
-todo/
+TaskMCP/
 ├── workspaces/              # 所有workspace数据库
 │   ├── default.db          
 │   ├── work.db             
-│   └── personal.db         
-├── workspace_config.json    # 当前workspace配置
+│   ├── personal.db         
+│   └── workspace_config.json    # 当前workspace配置
 ├── app.py                   # Web服务器
 └── mcp_server.py           # MCP服务器
 ```
 
-### workspace_config.json
+### workspaces/workspace_config.json
 ```json
 {
   "current_workspace": "work"
@@ -178,41 +178,3 @@ todo/
 - `create_workspace(workspace_name)` - 创建workspace
 - `delete_workspace(workspace_name)` - 删除workspace
 - `rename_workspace(old_name, new_name)` - 重命名workspace
-
-## 最佳实践
-
-1. **命名规范**：使用有意义的名称，如 `project-name`、`work-2024`、`personal`
-2. **定期清理**：删除不再使用的workspace以保持整洁
-3. **备份重要数据**：定期备份 `workspaces/` 目录
-4. **避免特殊字符**：workspace名称只使用字母、数字、下划线和连字符
-5. **上下文分离**：为不同类型的任务创建独立的workspace
-
-## 注意事项
-
-- ⚠️ 删除workspace会永久删除该workspace的所有数据，无法恢复
-- ⚠️ 不能删除当前活动的workspace，需要先切换到其他workspace
-- ⚠️ Workspace名称必须唯一
-- ⚠️ 重命名workspace时，如果目标名称已存在会失败
-- ℹ️ 切换workspace会触发所有客户端的实时更新
-- ℹ️ 新创建的workspace是空的，没有任何任务
-
-## 故障排除
-
-### 问题：找不到workspaces目录
-**解决**：目录会在首次使用时自动创建，或手动创建 `workspaces/` 目录
-
-### 问题：无法切换workspace
-**检查**：
-1. Workspace名称是否正确
-2. 是否有文件权限问题
-3. 查看服务器日志是否有错误
-
-### 问题：删除workspace失败
-**原因**：可能正在尝试删除当前workspace
-**解决**：先切换到其他workspace，然后再删除
-
-### 问题：数据丢失
-**预防**：
-1. 定期备份 `workspaces/` 目录
-2. 删除前确认操作
-3. 使用版本控制系统（Git）追踪变化

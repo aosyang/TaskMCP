@@ -1,4 +1,4 @@
-# Todo App Theme Colors
+# TaskMCP Theme Colors
 
 ## Background Colors
 
