@@ -48,6 +48,7 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
   // const [tempColor, setTempColor] = useState(task.color || '#ffffff');
   const [childrenFolded, setChildrenFolded] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
+  const [isHoveringTitle, setIsHoveringTitle] = useState(false);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const [isMobile, setIsMobile] = React.useState(() => {
     if (typeof window !== 'undefined') {
@@ -114,6 +115,14 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
       setCommentHeight(calculateHeight(commentsText));
     }
   }, [commentsText, isEditingComments]);
+
+  // Helper function to generate hover transition styles
+  const getHoverTransitionStyle = (isVisible: boolean): React.CSSProperties => ({
+    opacity: isVisible ? 1 : 0,
+    visibility: isVisible ? 'visible' : 'hidden',
+    pointerEvents: isVisible ? 'auto' : 'none',
+    transition: 'opacity 0.2s ease-in-out'
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -219,7 +228,11 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
         onMouseEnter={() => !isMobile && setIsHovering(true)}
         onMouseLeave={() => !isMobile && setIsHovering(false)}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+        <div 
+          style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: isMobile ? 'wrap' : 'nowrap' }}
+          onMouseEnter={() => !isMobile && setIsHoveringTitle(true)}
+          onMouseLeave={() => !isMobile && setIsHoveringTitle(false)}
+        >
           <span 
             className="drag-handle" 
             {...attributes} 
@@ -296,7 +309,7 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
               <>
                 <span 
                   className="task-text" 
-                  onDoubleClick={handleDoubleClick} 
+                  onDoubleClick={handleDoubleClick}
                   style={{ 
                     fontWeight: '600', 
                     fontSize: '14px',
@@ -308,18 +321,11 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
                   {task.is_current && <span style={{ fontSize: '12px', marginRight: '6px' }} aria-label="Current task">▶️</span>}
                   {task.task || '(Untitled task)'}
                 </span>
-                {!isDragging && commentsText && (
-                  <button
-                    onClick={() => setShowComments(!showComments)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        setShowComments(!showComments);
-                      }
-                    }}
-                    aria-label={showComments ? "Hide comments" : "Show comments"}
-                    aria-expanded={showComments}
-                    style={{ 
+                {!isDragging && (
+                  (() => {
+                    // If task has comments, always show the button; otherwise show on hover (PC) or always (mobile)
+                    const isVisible = commentsText ? true : (isMobile || isHoveringTitle);
+                    const commentButtonStyle: React.CSSProperties = {
                       cursor: 'pointer',
                       fontSize: '12px',
                       color: 'var(--text-muted)',
@@ -332,20 +338,61 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
                       border: 'none',
                       padding: 0,
                       textAlign: 'left',
-                      touchAction: 'manipulation'
-                    }}
-                    title={showComments ? "Hide comments" : "Show comments"}
-                  >
-                    <span style={{ fontSize: '10px' }} aria-hidden="true">{showComments ? '▼' : '▶'}</span>
-                    <span style={{ opacity: 0.9 }} aria-hidden="true">💬</span>
-                    <span>{showComments ? 'Hide comments' : 'Show comments'}</span>
-                  </button>
+                      touchAction: 'manipulation',
+                      ...getHoverTransitionStyle(isVisible)
+                    };
+                    
+                    return commentsText ? (
+                      <button
+                        onClick={() => setShowComments(!showComments)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setShowComments(!showComments);
+                          }
+                        }}
+                        aria-label={showComments ? "Hide comments" : "Show comments"}
+                        aria-expanded={showComments}
+                        style={commentButtonStyle}
+                        title={showComments ? "Hide comments" : "Show comments"}
+                      >
+                        <span style={{ fontSize: '10px' }} aria-hidden="true">{showComments ? '▼' : '▶'}</span>
+                        <span style={{ opacity: 0.9 }} aria-hidden="true">💬</span>
+                        <span>{showComments ? 'Hide comments' : 'Show comments'}</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setShowComments(true);
+                          setIsEditingComments(true);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setShowComments(true);
+                            setIsEditingComments(true);
+                          }
+                        }}
+                        aria-label="Add comment"
+                        style={commentButtonStyle}
+                        title="Add comment"
+                      >
+                        <span style={{ opacity: 0.9 }} aria-hidden="true">💬</span>
+                        <span>Add comment</span>
+                      </button>
+                    );
+                  })()
                 )}
               </>
             )}
           </div>
-          {!isDragging && !isMobile && isHovering && (
-            <div className="task-actions" role="toolbar" aria-label="Task actions">
+          {!isDragging && !isMobile && (
+            <div 
+              className="task-actions" 
+              role="toolbar" 
+              aria-label="Task actions"
+              style={getHoverTransitionStyle(isHoveringTitle)}
+            >
               <button 
                 className="btn btn-set-current" 
                 onClick={() => onSetCurrent(task.id)}
