@@ -659,6 +659,9 @@ interface ListViewProps {
   onFocusTask: (id: number) => void;
   findCurrentTask: (tasks: Task[]) => Task | null;
   scrollToCurrentTask: () => void;
+  focusedTaskId: number | null;
+  handleUnfocus: () => void;
+  findTaskById: (tasks: Task[], id: number) => Task | null;
 }
 
 export function ListView({ 
@@ -671,7 +674,10 @@ export function ListView({
   onSetCurrent,
   onFocusTask,
   findCurrentTask,
-  scrollToCurrentTask
+  scrollToCurrentTask,
+  focusedTaskId,
+  handleUnfocus,
+  findTaskById
 }: ListViewProps) {
   const [hideCompleted, setHideCompleted] = useState(false);
   const [commentsExpanded, setCommentsExpanded] = useState<'all' | 'none' | 'default'>('default');
@@ -709,6 +715,8 @@ export function ListView({
     <>
       {/* Control Buttons */}
       <div style={{
+        position: 'sticky',
+        top: focusedTaskId !== null ? '50px' : '0',
         display: 'flex',
         gap: '8px',
         marginBottom: '16px',
@@ -716,7 +724,9 @@ export function ListView({
         background: 'var(--bg-tertiary)',
         borderRadius: '8px',
         alignItems: 'center',
-        flexWrap: 'wrap'
+        flexWrap: 'wrap',
+        zIndex: 99,
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
       }}>
         <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)', marginRight: '8px' }}>
           Comments:
@@ -791,6 +801,55 @@ export function ListView({
           Expand completed comments
         </label>
       </div>
+
+      {focusedTaskId !== null && (
+        <div style={{
+          position: 'sticky',
+          top: 0,
+          background: 'var(--bg-current)',
+          border: '1px solid var(--border-current)',
+          borderRadius: '8px',
+          padding: '8px',
+          marginBottom: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          zIndex: 100,
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '14px' }}>🎯</span>
+            <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>Focus Mode</span>
+            <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+              Viewing: {findTaskById(tasks, focusedTaskId)?.task}
+            </span>
+          </div>
+          <button 
+            onClick={handleUnfocus}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleUnfocus();
+              }
+            }}
+            aria-label="Exit focus mode"
+            style={{
+              padding: '6px 12px',
+              fontSize: '12px',
+              background: 'var(--bg-secondary)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-primary)',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontWeight: '500',
+              minHeight: '24px',
+              minWidth: '24px'
+            }}
+          >
+            ✕ Exit Focus
+          </button>
+        </div>
+      )}
 
       <DndContext
         sensors={sensors}

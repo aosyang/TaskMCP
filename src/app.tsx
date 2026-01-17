@@ -341,50 +341,6 @@ function App() {
             />
           </div>
           <div id="main-content" style={{ flex: 1, minWidth: 0 }}>
-          {focusedTaskId !== null && (
-            <div style={{
-              background: 'var(--bg-current)',
-              border: '1px solid var(--border-current)',
-              borderRadius: '8px',
-              padding: '12px 16px',
-              marginBottom: '16px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '16px' }}>🎯</span>
-                <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>Focus Mode</span>
-                <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                  Viewing: {findTaskById(tasks, focusedTaskId)?.task}
-                </span>
-              </div>
-              <button 
-                onClick={handleUnfocus}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    handleUnfocus();
-                  }
-                }}
-                aria-label="Exit focus mode"
-                style={{
-                  padding: '6px 12px',
-                  fontSize: '13px',
-                  background: 'var(--bg-secondary)',
-                  color: 'var(--text-primary)',
-                  border: '1px solid var(--border-primary)',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontWeight: '500',
-                  minHeight: '44px',
-                  minWidth: '44px'
-                }}
-              >
-                ✕ Exit Focus
-              </button>
-            </div>
-          )}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
             <h1 style={{ textWrap: 'balance' }}>📝 Task List</h1>
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
@@ -601,6 +557,9 @@ function App() {
             onFocusTask={handleFocusTask}
             findCurrentTask={findCurrentTask}
             scrollToCurrentTask={scrollToCurrentTask}
+            focusedTaskId={focusedTaskId}
+            handleUnfocus={handleUnfocus}
+            findTaskById={findTaskById}
           />
           </div>
     </div>
