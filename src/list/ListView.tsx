@@ -223,7 +223,9 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
           borderRadius: '8px',
           padding: '12px',
           marginBottom: '8px',
-          boxShadow: '0 1px 3px var(--shadow)'
+          boxShadow: '0 1px 3px var(--shadow)',
+          boxSizing: 'border-box',
+          transform: 'none'
         }}
         onMouseEnter={() => !isMobile && setIsHovering(true)}
         onMouseLeave={() => !isMobile && setIsHovering(false)}
