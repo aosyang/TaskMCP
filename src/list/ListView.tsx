@@ -155,14 +155,23 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
       onEdit(task.id, undefined, commentsText);
     }
     setIsEditingComments(false);
+    // If comment is empty after losing focus, hide the comment section
+    if (!commentsText.trim()) {
+      setShowComments(false);
+    }
   };
 
   const handleCommentsKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && e.ctrlKey) {
       handleCommentsSubmit();
     } else if (e.key === 'Escape') {
-      setCommentsText(task.comments || '');
+      const originalComments = task.comments || '';
+      setCommentsText(originalComments);
       setIsEditingComments(false);
+      // If original comment is empty, hide the comment section
+      if (!originalComments.trim()) {
+        setShowComments(false);
+      }
     }
   };
 
@@ -292,7 +301,7 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
             onChange={() => onToggle(task.id)}
             aria-label={`Mark task "${task.task}" as ${task.done ? 'incomplete' : 'complete'}`}
           />
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'normal', alignSelf: 'flex-start', marginTop: '2px' }}>#{task.id}</span>
+          <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'normal', alignSelf: 'center', lineHeight: '1' }}>#{task.id}</span>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
             {isEditing ? (
               <input
@@ -323,68 +332,6 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
                   {task.is_current && <span style={{ fontSize: '12px', marginRight: '6px' }} aria-label="Current task">▶️</span>}
                   {task.task || '(Untitled task)'}
                 </span>
-                {!isDragging && (
-                  (() => {
-                    // If task has comments, always show the button; otherwise show on hover (PC) or always (mobile)
-                    const isVisible = commentsText ? true : (isMobile || isHoveringTitle);
-                    const commentButtonStyle: React.CSSProperties = {
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      color: 'var(--text-muted)',
-                      marginTop: '4px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      userSelect: 'none',
-                      background: 'transparent',
-                      border: 'none',
-                      padding: 0,
-                      textAlign: 'left',
-                      touchAction: 'manipulation',
-                      ...getHoverTransitionStyle(isVisible)
-                    };
-                    
-                    return commentsText ? (
-                      <button
-                        onClick={() => setShowComments(!showComments)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            setShowComments(!showComments);
-                          }
-                        }}
-                        aria-label={showComments ? "Hide comments" : "Show comments"}
-                        aria-expanded={showComments}
-                        style={commentButtonStyle}
-                        title={showComments ? "Hide comments" : "Show comments"}
-                      >
-                        <span style={{ fontSize: '10px' }} aria-hidden="true">{showComments ? '▼' : '▶'}</span>
-                        <span style={{ opacity: 0.9 }} aria-hidden="true">💬</span>
-                        <span>{showComments ? 'Hide comments' : 'Show comments'}</span>
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          setShowComments(true);
-                          setIsEditingComments(true);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            setShowComments(true);
-                            setIsEditingComments(true);
-                          }
-                        }}
-                        aria-label="Add comment"
-                        style={commentButtonStyle}
-                        title="Add comment"
-                      >
-                        <span style={{ opacity: 0.9 }} aria-hidden="true">💬</span>
-                        <span>Add comment</span>
-                      </button>
-                    );
-                  })()
-                )}
               </>
             )}
           </div>
@@ -438,6 +385,28 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
               >
                 ➕
               </button>
+              {!commentsText && (
+                <button 
+                  className="btn btn-add" 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShowComments(true);
+                    setIsEditingComments(true);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setShowComments(true);
+                      setIsEditingComments(true);
+                    }
+                  }}
+                  aria-label="Add comment"
+                  title="Add comment"
+                >
+                  💬
+                </button>
+              )}
               {/* <button className="btn btn-color" onClick={() => setShowColorPicker(!showColorPicker)} title="Change color">
                 🎨
               </button> */}
@@ -545,9 +514,42 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
         )} 
         */}
 
-        {!isDragging && showComments && (
+        {!isDragging && (commentsText || showComments) && (
           <div className="comments-section" style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border-primary)' }}>
-            {isEditingComments ? (
+            {commentsText && (
+              <button
+                onClick={() => setShowComments(!showComments)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setShowComments(!showComments);
+                  }
+                }}
+                aria-label={showComments ? "Hide comments" : "Show comments"}
+                aria-expanded={showComments}
+                style={{
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  color: 'var(--text-muted)',
+                  marginBottom: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  userSelect: 'none',
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 0,
+                  textAlign: 'left',
+                  touchAction: 'manipulation'
+                }}
+                title={showComments ? "Hide comments" : "Show comments"}
+              >
+                <span style={{ fontSize: '10px' }} aria-hidden="true">{showComments ? '▼' : '▶'}</span>
+                <span style={{ opacity: 0.9 }} aria-hidden="true">💬</span>
+                <span>{showComments ? 'Hide comments' : 'Show comments'}</span>
+              </button>
+            )}
+            {showComments && (isEditingComments ? (
               <textarea
                 ref={textareaRef}
                 className="task-input"
@@ -599,7 +601,7 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
                   <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Double-click to add comments...</span>
                 )}
               </div>
-            )}
+            ))}
           </div>
         )}
 
