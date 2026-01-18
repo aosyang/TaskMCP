@@ -1,0 +1,6 @@
+# Agent configuration
+# For CLI and other natural language interfaces
+
+[ollama]
+# Default Ollama model to use
+model = "qwen3:14b"

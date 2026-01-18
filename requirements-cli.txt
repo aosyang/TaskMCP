@@ -1,0 +1,7 @@
+# CLI Dependencies
+# Install with: pip install -r requirements-cli.txt
+# Note: This includes core dependencies, so install requirements.txt first or use:
+# pip install -r requirements.txt -r requirements-cli.txt
+
+# Ollama client (required by task_agent.py for CLI)
+ollama>=0.1.0

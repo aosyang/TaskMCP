@@ -56,15 +56,36 @@ A multi-workspace task management system with hierarchical structure, drag-and-d
 ### 1. Install Dependencies
 
 ```bash
-# Python dependencies
-pip install flask flask-socketio fastmcp
+# Core dependencies (required for Web interface and MCP server)
+pip install -r requirements.txt
+
+# For CLI (optional)
+pip install -r requirements-cli.txt
+
+# For Telegram bot (optional)
+pip install -r requirements-telegram.txt
+
+# Or install manually:
+# Core dependencies (Web interface and MCP server)
+pip install flask flask-socketio fastmcp requests
 
 # Python < 3.11 requires TOML support
 pip install tomli
 
+# For CLI (optional)
+pip install ollama
+
+# For Telegram bot (optional)
+pip install ollama python-telegram-bot python-dotenv telegramify-markdown
+
 # Node.js dependencies
 npm install
 ```
+
+**Note:** 
+- Core dependencies (`requirements.txt`) are required for Web interface and MCP server
+- CLI (`task_cli.py`) requires `ollama` - install `requirements-cli.txt`
+- Telegram bot (`task_telegram.py`) requires `ollama` and Telegram libraries - install `requirements-telegram.txt`
 
 ### 2. Configure Server Access Mode (Optional)
 

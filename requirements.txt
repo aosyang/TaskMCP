@@ -1,0 +1,16 @@
+# TaskMCP Core Dependencies
+# Required for Web interface (app.py) and MCP server (mcp_server.py)
+
+# Web framework
+flask>=2.0.0
+flask-socketio>=5.0.0
+
+# MCP server
+fastmcp>=0.1.0
+
+# HTTP requests
+requests>=2.25.0
+
+# TOML support (required for Python < 3.11)
+# Python 3.11+ has built-in tomllib
+tomli>=2.0.0; python_version < "3.11"
