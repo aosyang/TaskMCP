@@ -151,7 +151,9 @@ def process_tool_calls(
     model: Optional[str] = None,
     max_iterations: int = 10,
     before_chat_callback: Optional[Callable[[], None]] = None,
-    after_chat_callback: Optional[Callable[[], None]] = None
+    after_chat_callback: Optional[Callable[[], None]] = None,
+    on_tool_call: Optional[Callable[[str, dict], None]] = None,
+    on_tool_call_after: Optional[Callable[[str, dict, Any], None]] = None
 ):
     """Process tool calling loop
     
@@ -185,6 +187,14 @@ def process_tool_calls(
             tool_name = tool.function.name
             args = tool.function.arguments
             
+            # Call tool call callback if provided
+            if on_tool_call:
+                try:
+                    on_tool_call(tool_name, args)
+                except Exception as e:
+                    # Don't let callback errors break tool execution
+                    pass
+            
             if function_to_call := available_functions.get(tool_name):
                 try:
                     # Execute function
@@ -201,6 +211,14 @@ def process_tool_calls(
                     
                     output = function_to_call(**converted_args)
                     
+                    # Call tool call after callback if provided
+                    if on_tool_call_after:
+                        try:
+                            on_tool_call_after(tool_name, args, output)
+                        except Exception as e:
+                            # Don't let callback errors break tool execution
+                            pass
+                    
                     # Add tool call result back to messages
                     messages.append({
                         'role': 'tool',
@@ -208,13 +226,30 @@ def process_tool_calls(
                         'tool_name': tool_name
                     })
                 except Exception as e:
+                    error_output = f'Error: {str(e)}'
+                    
+                    # Call tool call after callback with error if provided
+                    if on_tool_call_after:
+                        try:
+                            on_tool_call_after(tool_name, args, error_output)
+                        except Exception:
+                            pass
+                    
                     messages.append({
                         'role': 'tool',
-                        'content': f'Error: {str(e)}',
+                        'content': error_output,
                         'tool_name': tool_name
                     })
             else:
                 error_msg = f'Tool {tool_name} not found'
+                
+                # Call tool call after callback with error if provided
+                if on_tool_call_after:
+                    try:
+                        on_tool_call_after(tool_name, args, error_msg)
+                    except Exception:
+                        pass
+                
                 messages.append({
                     'role': 'tool',
                     'content': error_msg,
@@ -252,7 +287,9 @@ def run_agent(
     messages: Optional[list] = None,
     return_text: bool = True,
     before_chat_callback: Optional[Callable[[], None]] = None,
-    after_chat_callback: Optional[Callable[[], None]] = None
+    after_chat_callback: Optional[Callable[[], None]] = None,
+    on_tool_call: Optional[Callable[[str, dict], None]] = None,
+    on_tool_call_after: Optional[Callable[[str, dict, Any], None]] = None
 ) -> Tuple[Optional[str], list]:
     """Run agent to process query
     
@@ -332,7 +369,9 @@ When users ask about the current time or date, use the time/date utility tools."
             available_functions,
             model,
             before_chat_callback=before_chat_callback,
-            after_chat_callback=after_chat_callback
+            after_chat_callback=after_chat_callback,
+            on_tool_call=on_tool_call,
+            on_tool_call_after=on_tool_call_after
         )
         
         # Add final response to message history

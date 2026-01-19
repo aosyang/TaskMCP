@@ -17,7 +17,7 @@ import io
 import os
 import logging
 import asyncio
-from typing import Dict
+from typing import Dict, Any
 
 # Set output encoding to UTF-8
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
@@ -136,7 +136,8 @@ def is_user_allowed(user_id: int, user_name: str = None) -> bool:
 user_conversations: Dict[int, list] = {}
 
 
-def run_agent_for_telegram(query: str, model: str = None, no_think: bool = False, messages: list = None):
+def run_agent_for_telegram(query: str, model: str = None, no_think: bool = False, messages: list = None, 
+                           tool_call_notifications: list = None, async_notify_callback = None, event_loop = None):
     """Run agent for Telegram bot
     
     This is a wrapper around task_agent.run_agent. The response will be automatically
@@ -147,10 +148,63 @@ def run_agent_for_telegram(query: str, model: str = None, no_think: bool = False
         model: Model to use (defaults to config file value)
         no_think: Whether to disable thinking mode
         messages: Optional conversation history message list
+        tool_call_notifications: Optional list to store tool call notifications (tool_name, args, result, is_before)
+        async_notify_callback: Optional async callback function to immediately notify user (update, notification_text)
+        event_loop: Optional event loop for async operations
     
     Returns:
         Tuple of (response_text, updated_message_list)
     """
+    # Create tool call callback (before execution) to log and notify immediately
+    def on_tool_call(tool_name: str, args: dict):
+        """Callback before a tool is called"""
+        # Log to console
+        logger.info(f"Tool calling (before): {tool_name} with args: {args}")
+        
+        # Format notification message
+        tool_display = tool_name.replace('_', ' ').title()
+        args_str = ""
+        if args:
+            args_parts = []
+            for key, value in args.items():
+                value_str = str(value)
+                if len(value_str) > 50:
+                    value_str = value_str[:50] + "..."
+                args_parts.append(f"{key}: {value_str}")
+            args_str = ", ".join(args_parts)
+            if len(args_str) > 150:
+                args_str = args_str[:150] + "..."
+        
+        notification_text = f"🔧 Calling tool: *{tool_display}*"
+        if args_str:
+            notification_text += f"\nArguments: `{args_str}`"
+        
+        # Immediately notify user if async callback is provided
+        if async_notify_callback and event_loop:
+            try:
+                # Schedule async notification in the event loop
+                future = asyncio.run_coroutine_threadsafe(
+                    async_notify_callback(notification_text),
+                    event_loop
+                )
+                # Don't wait for completion to avoid blocking
+            except Exception as e:
+                logger.warning(f"Failed to schedule tool call notification: {e}")
+        
+        # Store notification for async handling (for after notifications)
+        if tool_call_notifications is not None:
+            tool_call_notifications.append(('before', tool_name, args, None))
+    
+    # Create tool call callback (after execution) to log and notify
+    def on_tool_call_after(tool_name: str, args: dict, result: Any):
+        """Callback after a tool is called"""
+        # Log to console
+        logger.info(f"Tool called (after): {tool_name} with args: {args}, result: {result}")
+        
+        # Store notification for async handling
+        if tool_call_notifications is not None:
+            tool_call_notifications.append(('after', tool_name, args, result))
+    
     # Call the shared run_agent function
     # No need to add MarkdownV2 format requirements to prompt since telegramify-markdown
     # will automatically convert any Markdown format to MarkdownV2
@@ -159,7 +213,9 @@ def run_agent_for_telegram(query: str, model: str = None, no_think: bool = False
         model=model,
         no_think=no_think,
         messages=messages,
-        return_text=True
+        return_text=True,
+        on_tool_call=on_tool_call,
+        on_tool_call_after=on_tool_call_after
     )
     
     return response_text, updated_messages
@@ -282,17 +338,53 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Send typing indicator
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
     
+    # List to store tool call notifications (for after notifications)
+    tool_call_notifications = []
+    
+    # Create async callback for immediate notifications
+    async def async_notify(notification_text: str):
+        """Async callback to immediately send notification to user"""
+        try:
+            await safe_reply_text(update, notification_text)
+        except Exception as e:
+            logger.warning(f"Failed to send immediate tool call notification: {e}")
+    
+    # Get event loop for async operations
+    loop = asyncio.get_event_loop()
+    
     try:
         # Run agent with user's conversation history (in executor to avoid blocking)
-        loop = asyncio.get_event_loop()
         response_text, updated_messages = await loop.run_in_executor(
             None,
             run_agent_for_telegram,
             user_message,
             _default_model,
             False,
-            user_conversations[chat_id]
+            user_conversations[chat_id],
+            tool_call_notifications,
+            async_notify,
+            loop
         )
+        
+        # Send tool call after notifications to user (before notifications are sent immediately during execution)
+        for notification_type, tool_name, args, result in tool_call_notifications:
+            # Only send "after" notifications here (before notifications are sent immediately)
+            if notification_type == 'after':
+                # Format tool name for display (replace underscores with spaces, capitalize)
+                tool_display = tool_name.replace('_', ' ').title()
+                
+                # After tool call notification
+                notification_text = f"✅ Tool execution completed: *{tool_display}*"
+                if result is not None:
+                    result_str = str(result)
+                    if len(result_str) > 200:
+                        result_str = result_str[:200] + "..."
+                    notification_text += f"\nResult: `{result_str}`"
+                
+                try:
+                    await safe_reply_text(update, notification_text)
+                except Exception as e:
+                    logger.warning(f"Failed to send tool call after notification: {e}")
         
         # Update conversation history
         user_conversations[chat_id] = updated_messages
