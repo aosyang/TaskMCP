@@ -19,6 +19,7 @@ function App() {
   const [focusedTaskId, setFocusedTaskId] = useState<number | null>(null);
   const [showOutliner, setShowOutliner] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  const [stickyOffset, setStickyOffset] = useState(10);
 
   // Detect screen size and auto-hide outliner on mobile
   useEffect(() => {
@@ -185,6 +186,63 @@ function App() {
     return offset + 10; // Add 10px extra padding
   };
 
+  // Update sticky offset for button positioning
+  useEffect(() => {
+    const updateStickyOffset = () => {
+      const mainContent = document.querySelector('#main-content');
+      if (mainContent) {
+        let maxBottom = 0;
+        const allDivs = mainContent.querySelectorAll('div');
+        
+        // Find all sticky divs and check if they're actually "stuck" at the top
+        for (const div of allDivs) {
+          const style = window.getComputedStyle(div);
+          if (style.position === 'sticky') {
+            const rect = div.getBoundingClientRect();
+            const stickyTop = parseInt(style.top) || 0;
+            
+            // Check if the sticky element is actually "stuck" (its top matches the sticky top value)
+            // Allow a small tolerance (2px) for rounding
+            const isStuck = Math.abs(rect.top - stickyTop) < 2;
+            
+            if (isStuck) {
+              // Calculate bottom position: top + height
+              const bottom = rect.top + rect.height;
+              if (bottom > maxBottom) {
+                maxBottom = bottom;
+              }
+            }
+          }
+        }
+        
+        // Set offset to the bottom of the lowest stuck sticky element + padding
+        // If no sticky elements are stuck, use default 10px
+        if (maxBottom > 0) {
+          setStickyOffset(maxBottom + 10); // Add 10px padding
+        } else {
+          setStickyOffset(10);
+        }
+      } else {
+        setStickyOffset(10);
+      }
+    };
+
+    updateStickyOffset();
+    
+    // Update on scroll and resize
+    window.addEventListener('scroll', updateStickyOffset);
+    window.addEventListener('resize', updateStickyOffset);
+    
+    // Also update when focusedTaskId changes or tasks update
+    const timer = setTimeout(updateStickyOffset, 100);
+    
+    return () => {
+      window.removeEventListener('scroll', updateStickyOffset);
+      window.removeEventListener('resize', updateStickyOffset);
+      clearTimeout(timer);
+    };
+  }, [focusedTaskId, tasks]);
+
   const scrollToCurrentTask = () => {
     const currentTask = findCurrentTask(tasks);
     if (currentTask) {
@@ -325,7 +383,7 @@ function App() {
               style={{
                 position: 'fixed',
                 left: showOutliner ? '270px' : '10px',
-                top: '10px',
+                top: `${stickyOffset}px`,
                 zIndex: 1001,
                 padding: '8px 12px',
                 fontSize: '14px',
