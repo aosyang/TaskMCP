@@ -148,7 +148,7 @@ def list_tasks() -> str:
         for task in tasks:
             if task["parent_id"] == parent_id:
                 indent = "  " * level
-                status = "✓" if task["done"] else "☐"
+                status = "[x]" if task["done"] else "[ ]"
                 comments = f" [{task['comments']}]" if task["comments"] else ""
                 result.append(f"{indent}{status} {task['task']}{comments}")
                 # Recursively add children
@@ -346,7 +346,7 @@ def get_task(task_id: int) -> str:
     if not task:
         return f"Task #{task_id} not found"
     
-    status = "✓ Done" if task["done"] else "☐ Incomplete"
+    status = "[x] Done" if task["done"] else "[ ] Incomplete"
     parent = f"(subtask of #{task['parent_id']})" if task["parent_id"] else "(top-level)"
     comments = f"\nComments (markdown): {task['comments']}" if task["comments"] else ""
     
@@ -373,7 +373,7 @@ def search_tasks(query: str) -> str:
     
     result = []
     for task in tasks:
-        status = "✓" if task["done"] else "☐"
+        status = "[x]" if task["done"] else "[ ]"
         result.append(f"#{task['id']} {status} {task['task']}")
     
     return "\n".join(result)
@@ -480,7 +480,7 @@ def get_current_task() -> str:
     if not task:
         return f"Current task #{task_id} not found (may have been deleted)"
     
-    status = "✓ Done" if task["done"] else "☐ Incomplete"
+    status = "[x] Done" if task["done"] else "[ ] Incomplete"
     parent = f"(subtask of #{task['parent_id']})" if task["parent_id"] else "(top-level)"
     comments = f"\nComments (markdown): {task['comments']}" if task["comments"] else ""
     
@@ -707,7 +707,7 @@ def find_dangling_tasks() -> str:
     dangling = []
     for task in tasks_with_parents:
         if task["parent_id"] not in valid_ids:
-            status = "✓" if task["done"] else "☐"
+            status = "[x]" if task["done"] else "[ ]"
             dangling.append({
                 "id": task["id"],
                 "task": task["task"],
@@ -721,7 +721,7 @@ def find_dangling_tasks() -> str:
     # Format output
     result = [f"Found {len(dangling)} dangling task(s) in workspace '{workspace}':\n"]
     for task in dangling:
-        status = "✓" if task["done"] else "☐"
+        status = "[x]" if task["done"] else "[ ]"
         result.append(f"{status} #{task['id']}: {task['task']}")
         result.append(f"   References non-existent parent #{task['invalid_parent_id']}")
     
