@@ -231,12 +231,77 @@ def clean_markdownv2_text(text: str) -> str:
     return text
 
 
+def compress_tool_messages(conversation_history: Optional[list], min_batch_size: int = 3) -> list:
+    """Compress consecutive tool messages of the same type into a single message
+    
+    This reduces the number of tool messages in conversation history by merging
+    consecutive tool calls of the same type (e.g., multiple add_task calls).
+    
+    Args:
+        conversation_history: Original conversation history
+        min_batch_size: Minimum number of consecutive tool messages to compress (default: 3)
+    
+    Returns:
+        Compressed conversation history
+    """
+    if not conversation_history:
+        return []
+    
+    compressed = []
+    i = 0
+    
+    while i < len(conversation_history):
+        msg = conversation_history[i]
+        
+        # If this is a tool message, check for consecutive tool messages of the same type
+        if msg.get('role') == 'tool':
+            tool_name = msg.get('tool_name', 'unknown')
+            batch = [msg]
+            j = i + 1
+            
+            # Collect consecutive tool messages of the same type
+            while j < len(conversation_history):
+                next_msg = conversation_history[j]
+                if (next_msg.get('role') == 'tool' and 
+                    next_msg.get('tool_name') == tool_name):
+                    batch.append(next_msg)
+                    j += 1
+                else:
+                    break
+            
+            # If we have enough consecutive messages, compress them
+            if len(batch) >= min_batch_size:
+                # Create a compressed message
+                compressed_msg = {
+                    'role': 'tool',
+                    'tool_name': tool_name,
+                    'content': f"[Batch of {len(batch)} {tool_name} calls]\n" + 
+                              "\n".join([f"- {m.get('content', '')}" for m in batch]),
+                    'compressed': True,
+                    'original_count': len(batch)
+                }
+                compressed.append(compressed_msg)
+                i = j
+            else:
+                # Not enough to compress, add individually
+                compressed.extend(batch)
+                i = j
+        else:
+            # Not a tool message, add as-is
+            compressed.append(msg)
+            i += 1
+    
+    return compressed
+
+
 def dump_conversation_to_file(
     user_id: int,
     username: Optional[str],
     chat_id: int,
     conversation_history: Optional[list],
-    output_dir: Optional[str] = None
+    output_dir: Optional[str] = None,
+    compress_tools: bool = True,
+    min_batch_size: int = 3
 ) -> tuple[str, str]:
     """Dump conversation history to a JSON file
     
@@ -249,18 +314,32 @@ def dump_conversation_to_file(
         conversation_history: Conversation history messages list
         output_dir: Base directory to save the file (default: same directory as this file)
                    Files will be saved in a 'dumps' subdirectory
+        compress_tools: Whether to compress consecutive tool messages (default: True)
+        min_batch_size: Minimum number of consecutive tool messages to compress (default: 3)
     
     Returns:
         Tuple of (filepath, filename)
     """
+    # Compress tool messages if requested
+    if compress_tools and conversation_history:
+        compressed_history = compress_tool_messages(conversation_history, min_batch_size)
+        original_count = len(conversation_history)
+        compressed_count = len(compressed_history)
+    else:
+        compressed_history = conversation_history
+        original_count = len(conversation_history) if conversation_history else 0
+        compressed_count = original_count
+    
     # Prepare dump data
     dump_data: Dict[str, Any] = {
         "user_id": user_id,
         "username": username,
         "chat_id": chat_id,
         "dump_timestamp": datetime.now().isoformat(),
-        "conversation_history": conversation_history if conversation_history else None,
-        "conversation_count": len(conversation_history) if conversation_history else 0
+        "conversation_history": compressed_history if compressed_history else None,
+        "conversation_count": compressed_count,
+        "original_count": original_count if compress_tools else None,
+        "compressed": compress_tools and original_count != compressed_count
     }
     
     # Convert to JSON

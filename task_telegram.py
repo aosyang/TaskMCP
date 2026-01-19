@@ -158,45 +158,152 @@ def run_agent_for_telegram(query: str, model: str = None, no_think: bool = False
     Returns:
         Tuple of (response_text, updated_message_list)
     """
+    # Define batch tools that should be grouped together
+    BATCH_TOOLS = {
+        'add_task', 'add_task_with_parent', 'update_task', 
+        'delete_task', 'toggle_task', 'set_color'
+    }
+    
+    # Track batch operations
+    batch_state = {
+        'current_tool': None,
+        'count': 0,
+        'results': [],
+        'started': False
+    }
+    
+    def send_batch_notification():
+        """Send notification for completed batch operation"""
+        if batch_state['current_tool'] and batch_state['count'] > 0:
+            tool_name = batch_state['current_tool']
+            tool_display = tool_name.replace('_', ' ').title()
+            count = batch_state['count']
+            
+            # Create summary notification
+            notification_text = f"✅ Completed: *{tool_display}* ({count} calls)"
+            
+            # Add summary of results (limit to first 3 for readability and to avoid message length issues)
+            if batch_state['results']:
+                summary_lines = []
+                max_results_to_show = 3
+                max_result_length = 80
+                
+                for i, result in enumerate(batch_state['results'][:max_results_to_show]):
+                    result_str = str(result)
+                    if len(result_str) > max_result_length:
+                        result_str = result_str[:max_result_length] + "..."
+                    summary_lines.append(f"• {result_str}")
+                
+                if count > max_results_to_show:
+                    summary_lines.append(f"... and {count - max_results_to_show} more")
+                
+                summary_text = "\n".join(summary_lines)
+                # Ensure total message doesn't exceed Telegram's limit (4096 chars)
+                # Reserve some space for the header and formatting
+                max_summary_length = 3500
+                if len(notification_text) + len(summary_text) + 10 > max_summary_length:
+                    # Truncate summary if needed
+                    available_length = max_summary_length - len(notification_text) - 20
+                    if available_length > 0:
+                        summary_text = summary_text[:available_length] + "..."
+                    else:
+                        summary_text = ""
+                
+                if summary_text:
+                    notification_text += "\n" + summary_text
+            
+            # Send notification
+            if async_notify_callback and event_loop:
+                try:
+                    asyncio.run_coroutine_threadsafe(
+                        async_notify_callback(notification_text),
+                        event_loop
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to send batch notification: {e}")
+            
+            # Store in notifications list
+            if tool_call_notifications is not None:
+                tool_call_notifications.append(('batch_after', tool_name, None, batch_state['results']))
+            
+            # Reset batch state
+            batch_state['current_tool'] = None
+            batch_state['count'] = 0
+            batch_state['results'] = []
+            batch_state['started'] = False
+    
     # Create tool call callback (before execution) to log and notify immediately
     def on_tool_call(tool_name: str, args: dict):
         """Callback before a tool is called"""
         # Log to console
         logger.info(f"Tool calling (before): {tool_name} with args: {args}")
         
-        # Format notification message
-        tool_display = tool_name.replace('_', ' ').title()
-        args_str = ""
-        if args:
-            args_parts = []
-            for key, value in args.items():
-                value_str = str(value)
-                if len(value_str) > 50:
-                    value_str = value_str[:50] + "..."
-                args_parts.append(f"{key}: {value_str}")
-            args_str = ", ".join(args_parts)
-            if len(args_str) > 150:
-                args_str = args_str[:150] + "..."
+        # Check if this is a batch tool
+        is_batch_tool = tool_name in BATCH_TOOLS
         
-        notification_text = f"🔧 Calling tool: *{tool_display}*"
-        if args_str:
-            notification_text += f"\nArguments: `{args_str}`"
+        # If this is a different tool than current batch, send previous batch notification
+        if batch_state['current_tool'] and batch_state['current_tool'] != tool_name:
+            send_batch_notification()
         
-        # Immediately notify user if async callback is provided
-        if async_notify_callback and event_loop:
-            try:
-                # Schedule async notification in the event loop
-                future = asyncio.run_coroutine_threadsafe(
-                    async_notify_callback(notification_text),
-                    event_loop
-                )
-                # Don't wait for completion to avoid blocking
-            except Exception as e:
-                logger.warning(f"Failed to schedule tool call notification: {e}")
-        
-        # Store notification for async handling (for after notifications)
-        if tool_call_notifications is not None:
-            tool_call_notifications.append(('before', tool_name, args, None))
+        # Handle batch tools
+        if is_batch_tool:
+            # Start or continue batch
+            if not batch_state['started']:
+                batch_state['current_tool'] = tool_name
+                batch_state['started'] = True
+                batch_state['count'] = 0
+                batch_state['results'] = []
+                
+                # Send batch start notification
+                tool_display = tool_name.replace('_', ' ').title()
+                notification_text = f"🔧 Starting batch: *{tool_display}*..."
+                
+                if async_notify_callback and event_loop:
+                    try:
+                        asyncio.run_coroutine_threadsafe(
+                            async_notify_callback(notification_text),
+                            event_loop
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to send batch start notification: {e}")
+            
+            batch_state['count'] += 1
+        else:
+            # Non-batch tool: send previous batch notification if any
+            if batch_state['current_tool']:
+                send_batch_notification()
+            
+            # Send individual notification for non-batch tools
+            tool_display = tool_name.replace('_', ' ').title()
+            args_str = ""
+            if args:
+                args_parts = []
+                for key, value in args.items():
+                    value_str = str(value)
+                    if len(value_str) > 50:
+                        value_str = value_str[:50] + "..."
+                    args_parts.append(f"{key}: {value_str}")
+                args_str = ", ".join(args_parts)
+                if len(args_str) > 150:
+                    args_str = args_str[:150] + "..."
+            
+            notification_text = f"🔧 Calling tool: *{tool_display}*"
+            if args_str:
+                notification_text += f"\nArguments: `{args_str}`"
+            
+            # Immediately notify user if async callback is provided
+            if async_notify_callback and event_loop:
+                try:
+                    asyncio.run_coroutine_threadsafe(
+                        async_notify_callback(notification_text),
+                        event_loop
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to schedule tool call notification: {e}")
+            
+            # Store notification for async handling (for after notifications)
+            if tool_call_notifications is not None:
+                tool_call_notifications.append(('before', tool_name, args, None))
     
     # Create tool call callback (after execution) to log and notify
     def on_tool_call_after(tool_name: str, args: dict, result: Any):
@@ -204,9 +311,36 @@ def run_agent_for_telegram(query: str, model: str = None, no_think: bool = False
         # Log to console
         logger.info(f"Tool called (after): {tool_name} with args: {args}, result: {result}")
         
-        # Store notification for async handling
-        if tool_call_notifications is not None:
-            tool_call_notifications.append(('after', tool_name, args, result))
+        # Check if this is a batch tool
+        is_batch_tool = tool_name in BATCH_TOOLS
+        
+        if is_batch_tool:
+            # Accumulate result for batch
+            if batch_state['current_tool'] == tool_name:
+                batch_state['results'].append(result)
+        else:
+            # Non-batch tool: send individual notification immediately
+            # Don't add to tool_call_notifications since we send it immediately via callback
+            tool_display = tool_name.replace('_', ' ').title()
+            notification_text = f"✅ Tool execution completed: *{tool_display}*"
+            if result is not None:
+                result_str = str(result)
+                if len(result_str) > 200:
+                    result_str = result_str[:200] + "..."
+                notification_text += f"\nResult: `{result_str}`"
+            
+            if async_notify_callback and event_loop:
+                try:
+                    asyncio.run_coroutine_threadsafe(
+                        async_notify_callback(notification_text),
+                        event_loop
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to send tool call after notification: {e}")
+            
+            # Note: We don't add non-batch tool notifications to tool_call_notifications
+            # because they are sent immediately via async_notify_callback above.
+            # This prevents duplicate notifications in handle_message
     
     # Get user's language preference (None if not set, meaning no language restriction)
     language = user_config.get_user_language(user_id) if user_id is not None else None
@@ -224,6 +358,10 @@ def run_agent_for_telegram(query: str, model: str = None, no_think: bool = False
         on_tool_call_after=on_tool_call_after,
         language=language
     )
+    
+    # Send any remaining batch notification before returning
+    if batch_state['current_tool']:
+        send_batch_notification()
     
     return response_text, updated_messages
 
@@ -497,8 +635,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         
         # Send tool call after notifications to user (before notifications are sent immediately during execution)
+        # Note: 
+        # - batch_after notifications are already sent via async_notify_callback, so we skip them here
+        # - Non-batch tool 'after' notifications are also sent immediately via callback and not added to this list
+        # - This loop now mainly handles 'before' notifications if needed in the future
         for notification_type, tool_name, args, result in tool_call_notifications:
-            # Only send "after" notifications here (before notifications are sent immediately)
+            # Skip batch_after notifications (already sent via callback)
+            if notification_type == 'batch_after':
+                continue
+            
+            # Handle "after" notifications (should not occur for non-batch tools, but kept for compatibility)
             if notification_type == 'after':
                 # Format tool name for display (replace underscores with spaces, capitalize)
                 tool_display = tool_name.replace('_', ' ').title()
