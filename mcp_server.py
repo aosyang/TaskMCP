@@ -40,8 +40,28 @@ def list_all_workspaces() -> str:
     
     result = ["Available workspaces:"]
     for ws in workspaces:
-        marker = " (current)" if ws == current else ""
-        result.append(f"  - {ws}{marker}")
+        # Get task count for this workspace
+        try:
+            conn = get_db(ws)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM tasks")
+            task_count = cursor.fetchone()[0]
+            conn.close()
+        except Exception:
+            # If database doesn't exist or error, treat as empty
+            task_count = 0
+        
+        # Build markers
+        markers = []
+        if ws == current:
+            markers.append("current")
+        if task_count == 0:
+            markers.append("empty")
+        else:
+            markers.append(f"{task_count} task{'s' if task_count > 1 else ''}")
+        
+        marker_str = f" ({', '.join(markers)})" if markers else ""
+        result.append(f"  - {ws}{marker_str}")
     
     return "\n".join(result)
 
