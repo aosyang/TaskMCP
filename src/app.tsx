@@ -21,6 +21,12 @@ function App() {
   const [isMobile, setIsMobile] = useState(false);
   const [stickyOffset, setStickyOffset] = useState(10);
   const [showManageText, setShowManageText] = useState(true);
+  const [isTaskInputFocused, setIsTaskInputFocused] = useState(false);
+  const blurTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const [showToast, setShowToast] = useState(false);
+  const [toastFadingOut, setToastFadingOut] = useState(false);
+  const [toastTopOffset, setToastTopOffset] = useState(20);
+  const [toastMessage, setToastMessage] = useState('Task added');
 
   // Detect screen size and auto-hide outliner on mobile
   useEffect(() => {
@@ -110,12 +116,21 @@ function App() {
 
   const handleAdd = async () => {
     if (newTask.trim()) {
-      await fetch('/add', {
+      const response = await fetch('/add', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ task: newTask.trim(), parent_id: null }),
       });
-      setNewTask('');
+      if (response.ok) {
+        setNewTask('');
+        // Show toast notification
+        showToastNotification('Task added');
+        // Remove focus from input to hide buttons
+        const input = document.getElementById('new-task-input') as HTMLInputElement;
+        if (input) {
+          input.blur();
+        }
+      }
     }
   };
 
@@ -135,18 +150,40 @@ function App() {
     });
   };
 
+  const showToastNotification = (message: string) => {
+    setToastMessage(message);
+    setShowToast(true);
+    setToastFadingOut(false);
+    setTimeout(() => {
+      // Start fade out animation
+      setToastFadingOut(true);
+      // Hide after animation completes
+      setTimeout(() => {
+        setShowToast(false);
+        setToastFadingOut(false);
+      }, 300);
+    }, 2000);
+  };
+
   const handleDelete = async (id: number) => {
     if (confirm('Delete this task and all its subtasks?')) {
-      await fetch(`/delete/${id}`);
+      const response = await fetch(`/delete/${id}`);
+      if (response.ok) {
+        showToastNotification('Task deleted');
+      }
     }
   };
 
   const handleAddChild = async (parentId: number, task: string) => {
-    await fetch('/add', {
+    const response = await fetch('/add', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ task, parent_id: parentId }),
     });
+    if (response.ok) {
+      // Show toast notification
+      showToastNotification('任务已添加');
+    }
   };
 
   const handleReorder = async (updates: { id: number; position: number; parent_id: number | null }[]) => {
@@ -218,6 +255,7 @@ function App() {
       const mainContent = document.querySelector('#main-content');
       if (mainContent) {
         let maxBottom = 0;
+        let toastOffset = 0;
         const allDivs = mainContent.querySelectorAll('div');
         
         // Find all sticky divs and check if they're actually "stuck" at the top
@@ -238,6 +276,12 @@ function App() {
                 maxBottom = bottom;
               }
             }
+            
+            // For toast, calculate offset based on all sticky elements (whether stuck or not)
+            // This ensures toast doesn't overlap sticky elements even when they're not stuck
+            if (div.textContent?.includes('Comments:') || div.textContent?.includes('Focus Mode')) {
+              toastOffset += rect.height;
+            }
           }
         }
         
@@ -248,8 +292,12 @@ function App() {
         } else {
           setStickyOffset(10);
         }
+        
+        // Set toast offset (always consider sticky elements to avoid overlap)
+        setToastTopOffset(Math.max(20, toastOffset + 10));
       } else {
         setStickyOffset(10);
+        setToastTopOffset(20);
       }
     };
 
@@ -393,6 +441,57 @@ function App() {
 
   return (
     <>
+      <style>{`
+        @keyframes toastFadeIn {
+          from {
+            opacity: 0;
+            transform: translate(-50%, -10px);
+          }
+          to {
+            opacity: 1;
+            transform: translate(-50%, 0);
+          }
+        }
+        @keyframes toastFadeOut {
+          from {
+            opacity: 1;
+            transform: translate(-50%, 0);
+          }
+          to {
+            opacity: 0;
+            transform: translate(-50%, -10px);
+          }
+        }
+      `}</style>
+      {showToast && (
+        <div
+          style={{
+            position: 'fixed',
+            top: `${toastTopOffset}px`,
+            left: '50%',
+            transform: 'translate(-50%, 0)',
+            zIndex: 10000,
+            background: 'var(--bg-secondary)',
+            color: 'var(--text-primary)',
+            padding: '12px 24px',
+            borderRadius: '8px',
+            boxShadow: '0 4px 12px var(--shadow-elevated)',
+            border: '1px solid var(--border-primary)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '14px',
+            fontWeight: '500',
+            opacity: 0,
+            animation: toastFadingOut ? 'toastFadeOut 0.3s ease-out forwards' : 'toastFadeIn 0.3s ease-out forwards',
+            maxWidth: '90%',
+            wordBreak: 'break-word'
+          }}
+        >
+          <span>✓</span>
+          <span>{toastMessage}</span>
+        </div>
+      )}
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <div style={{ display: 'flex', gap: '20px', minHeight: '100vh', position: 'relative' }}>
           {isMobile && (
@@ -665,7 +764,7 @@ function App() {
             </div>
           )}
 
-          <div className="add-form">
+          <div className="add-form" style={{ flexDirection: isMobile ? 'column' : 'row' }}>
             <label htmlFor="new-task-input" className="sr-only">Add a new task</label>
             <input
               id="new-task-input"
@@ -675,15 +774,89 @@ function App() {
               value={newTask}
               onChange={(e) => setNewTask(e.target.value)}
               onKeyDown={handleKeyDown}
+              onFocus={() => {
+                if (blurTimeoutRef.current) {
+                  clearTimeout(blurTimeoutRef.current);
+                  blurTimeoutRef.current = null;
+                }
+                setIsTaskInputFocused(true);
+              }}
+              onBlur={(e) => {
+                // Delay blur to allow button clicks
+                blurTimeoutRef.current = setTimeout(() => {
+                  // Check if the related target (what's being focused) is a button
+                  const relatedTarget = e.relatedTarget as HTMLElement;
+                  if (!relatedTarget || !relatedTarget.closest('.add-form button')) {
+                    setIsTaskInputFocused(false);
+                  }
+                }, 150);
+              }}
               autoComplete="off"
               aria-label="New task input"
+              style={{ width: isMobile ? '100%' : 'auto' }}
             />
-            <button 
-              onClick={handleAdd}
-              aria-label="Add task"
-            >
-              ➕ Add
-            </button>
+            {isMobile && isTaskInputFocused && (
+              <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
+                <button 
+                  onMouseDown={(e) => {
+                    e.preventDefault(); // Prevent input blur
+                  }}
+                  onClick={() => {
+                    setNewTask('');
+                    // Keep focus on input after clearing
+                    const input = document.getElementById('new-task-input') as HTMLInputElement;
+                    if (input) {
+                      input.focus();
+                    }
+                  }}
+                  aria-label="Clear input"
+                  style={{
+                    flex: 1,
+                    padding: '12px 24px',
+                    background: 'var(--btn-delete-bg)',
+                    color: 'var(--btn-delete-color)',
+                    border: '1px solid var(--btn-delete-border)',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    touchAction: 'manipulation',
+                    minHeight: '44px',
+                    minWidth: '44px',
+                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'var(--btn-delete-hover)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'var(--btn-delete-bg)';
+                  }}
+                >
+                  ❌ Clear
+                </button>
+                <button 
+                  onMouseDown={(e) => {
+                    e.preventDefault(); // Prevent input blur
+                  }}
+                  onClick={handleAdd}
+                  aria-label="Add task"
+                  style={{
+                    flex: 1,
+                    width: 'auto'
+                  }}
+                >
+                  ➕ Add
+                </button>
+              </div>
+            )}
+            {!isMobile && (
+              <button 
+                onClick={handleAdd}
+                aria-label="Add task"
+              >
+                ➕ Add
+              </button>
+            )}
           </div>
 
           <ListView
