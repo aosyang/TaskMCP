@@ -58,6 +58,7 @@ except ImportError:
 
 # Import shared agent functionality
 import task_agent
+import user_config
 from task_telegram_utils import clean_markdownv2_text, dump_conversation_to_file
 
 # Load configuration
@@ -137,7 +138,8 @@ user_conversations: Dict[int, list] = {}
 
 
 def run_agent_for_telegram(query: str, model: str = None, no_think: bool = False, messages: list = None, 
-                           tool_call_notifications: list = None, async_notify_callback = None, event_loop = None):
+                           tool_call_notifications: list = None, async_notify_callback = None, event_loop = None,
+                           user_id: int = None):
     """Run agent for Telegram bot
     
     This is a wrapper around task_agent.run_agent. The response will be automatically
@@ -151,6 +153,7 @@ def run_agent_for_telegram(query: str, model: str = None, no_think: bool = False
         tool_call_notifications: Optional list to store tool call notifications (tool_name, args, result, is_before)
         async_notify_callback: Optional async callback function to immediately notify user (update, notification_text)
         event_loop: Optional event loop for async operations
+        user_id: Telegram user ID for language preference lookup
     
     Returns:
         Tuple of (response_text, updated_message_list)
@@ -205,6 +208,9 @@ def run_agent_for_telegram(query: str, model: str = None, no_think: bool = False
         if tool_call_notifications is not None:
             tool_call_notifications.append(('after', tool_name, args, result))
     
+    # Get user's language preference (None if not set, meaning no language restriction)
+    language = user_config.get_user_language(user_id) if user_id is not None else None
+    
     # Call the shared run_agent function
     # No need to add MarkdownV2 format requirements to prompt since telegramify-markdown
     # will automatically convert any Markdown format to MarkdownV2
@@ -215,7 +221,8 @@ def run_agent_for_telegram(query: str, model: str = None, no_think: bool = False
         messages=messages,
         return_text=True,
         on_tool_call=on_tool_call,
-        on_tool_call_after=on_tool_call_after
+        on_tool_call_after=on_tool_call_after,
+        language=language
     )
     
     return response_text, updated_messages
@@ -313,9 +320,82 @@ Examples:
 - "Mark task #1 as done"
 
 Use /clear to reset conversation history.
-Use /dump to export conversation history as JSON for debugging."""
+Use /dump to export conversation history as JSON for debugging.
+Use /language to set your language preference."""
     
     await safe_reply_text(update, help_text)
+
+
+async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /language command - Set or view language preference"""
+    user_id = update.effective_user.id
+    username = update.effective_user.username
+    
+    # Check whitelist
+    if not is_user_allowed(user_id, username):
+        await safe_reply_text(update, "Sorry, you are not authorized to use this bot.")
+        return
+    
+    # Get current language
+    current_language = user_config.get_user_language(user_id)
+    if current_language:
+        current_language_name = user_config.SUPPORTED_LANGUAGES.get(current_language, current_language)
+    else:
+        current_language_name = "English (no restriction)"
+    
+    # Check if user provided a language code
+    if context.args and len(context.args) > 0:
+        language_code = context.args[0].lower()
+        
+        if language_code == 'clear':
+            # Clear language setting (remove from config)
+            config = user_config.load_user_config()
+            user_id_str = str(user_id)
+            if user_id_str in config and 'language' in config[user_id_str]:
+                del config[user_id_str]['language']
+                # Remove user entry if it's empty
+                if not config[user_id_str]:
+                    del config[user_id_str]
+                user_config.save_user_config(config)
+            await safe_reply_text(
+                update,
+                "Language restriction cleared. Using default (English, no restriction)."
+            )
+        elif language_code in user_config.SUPPORTED_LANGUAGES:
+            if user_config.set_user_language(user_id, language_code):
+                language_name = user_config.SUPPORTED_LANGUAGES[language_code]
+                await safe_reply_text(
+                    update,
+                    f"Language preference set to: {language_name} ({language_code})\n\n"
+                    f"The bot will now respond in {language_name}."
+                )
+            else:
+                await safe_reply_text(update, "Failed to set language preference.")
+        else:
+            # Show supported languages
+            lang_list = "\n".join([f"  {code}: {name}" for code, name in user_config.SUPPORTED_LANGUAGES.items()])
+            await safe_reply_text(
+                update,
+                f"Invalid language code: {language_code}\n\n"
+                f"Supported languages:\n{lang_list}\n\n"
+                f"Usage: /language <code>\n"
+                f"Example: /language en\n"
+                f"Usage: /language clear (to remove language restriction)"
+            )
+    else:
+        # Show current language and supported languages
+        lang_list = "\n".join([f"  {code}: {name}" for code, name in user_config.SUPPORTED_LANGUAGES.items()])
+        current_display = f"{current_language_name}"
+        if current_language:
+            current_display += f" ({current_language})"
+        await safe_reply_text(
+            update,
+            f"Current language: {current_display}\n\n"
+            f"Supported languages:\n{lang_list}\n\n"
+            f"Usage: /language <code>\n"
+            f"Example: /language en\n"
+            f"Usage: /language clear (to remove language restriction)"
+        )
 
 
 async def dump_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -412,7 +492,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_conversations[chat_id],
             tool_call_notifications,
             async_notify,
-            loop
+            loop,
+            user_id  # Pass user_id for language preference
         )
         
         # Send tool call after notifications to user (before notifications are sent immediately during execution)
@@ -471,6 +552,7 @@ def main():
     application.add_handler(CommandHandler("clear", clear_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("dump", dump_command))
+    application.add_handler(CommandHandler("language", language_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     # Start bot

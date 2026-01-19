@@ -289,7 +289,8 @@ def run_agent(
     before_chat_callback: Optional[Callable[[], None]] = None,
     after_chat_callback: Optional[Callable[[], None]] = None,
     on_tool_call: Optional[Callable[[str, dict], None]] = None,
-    on_tool_call_after: Optional[Callable[[str, dict, Any], None]] = None
+    on_tool_call_after: Optional[Callable[[str, dict, Any], None]] = None,
+    language: Optional[str] = None
 ) -> Tuple[Optional[str], list]:
     """Run agent to process query
     
@@ -301,6 +302,7 @@ def run_agent(
         return_text: If True, returns (response_text, messages); if False, returns (None, messages) for CLI compatibility
         before_chat_callback: Optional callback to call before each chat request
         after_chat_callback: Optional callback to call after each chat request
+        language: Language code (e.g., 'zh', 'en'). If None, defaults to None (no language restriction) or user's configured language preference.
     
     Returns:
         Tuple of (response_text or None, updated_message_list)
@@ -312,8 +314,24 @@ def run_agent(
     client = Client()
     available_functions = get_available_functions()
     
-    # Build system prompt
-    system_prompt = """You are a task management assistant that can help users manage tasks and workspaces.
+    # Import user_config for language support
+    import user_config
+    
+    # Get language preference (default to None for no language restriction)
+    if language is None:
+        language = user_config.get_user_language(None)  # Get from config, or None if not set
+    
+    # Build system prompt with language-specific instruction (only if language is set)
+    language_instruction = user_config.get_language_prompt(language)
+    
+    # Build base system prompt
+    system_prompt = """You are a task management assistant that can help users manage tasks and workspaces."""
+    
+    # Add language instruction only if language is explicitly set
+    if language_instruction:
+        system_prompt += f"\n\n{language_instruction}"
+    
+    system_prompt += """
 
 You can use the following tools to help users:
 - Workspace management: view, switch, create, delete workspaces

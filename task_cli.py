@@ -21,6 +21,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 # Import shared agent functionality
 import task_agent
+import user_config
 
 # Load configuration
 try:
@@ -64,7 +65,7 @@ class LoadingAnimation:
         sys.stdout.flush()
 
 
-def run_agent_with_ui(query: str, model: Optional[str] = None, no_think: bool = False, messages: Optional[list] = None):
+def run_agent_with_ui(query: str, model: Optional[str] = None, no_think: bool = False, messages: Optional[list] = None, language: Optional[str] = None):
     """Run agent with CLI-specific UI (loading animation and output formatting)
     
     Args:
@@ -72,12 +73,17 @@ def run_agent_with_ui(query: str, model: Optional[str] = None, no_think: bool = 
         model: Model to use (defaults to config file value)
         no_think: Whether to disable thinking mode
         messages: Optional conversation history message list
+        language: Language code (e.g., 'zh', 'en'). If None, uses default from user config.
     
     Returns:
         Updated message list
     """
     if model is None:
         model = _default_model
+    
+    # Get language preference if not specified
+    if language is None:
+        language = user_config.get_user_language(None)  # None for CLI default
     
     # Create loading animation
     loader = LoadingAnimation()
@@ -97,7 +103,8 @@ def run_agent_with_ui(query: str, model: Optional[str] = None, no_think: bool = 
         messages=messages,
         return_text=True,
         before_chat_callback=before_chat,
-        after_chat_callback=after_chat
+        after_chat_callback=after_chat,
+        language=language
     )
     
     # Print response if available
@@ -107,15 +114,29 @@ def run_agent_with_ui(query: str, model: Optional[str] = None, no_think: bool = 
     return updated_messages
 
 
-def interactive_mode(model: Optional[str] = None, no_think: bool = False):
+def interactive_mode(model: Optional[str] = None, no_think: bool = False, language: Optional[str] = None):
     """Interactive mode (with conversation history support)"""
     if model is None:
         model = _default_model
+    
+    # Get language preference if not specified (None means no language restriction)
+    if language is None:
+        language = user_config.get_user_language(None)  # None for CLI default (no restriction)
+    
+    if language:
+        current_language_name = user_config.SUPPORTED_LANGUAGES.get(language, language)
+    else:
+        current_language_name = "English (no restriction)"
+    
     print('=' * 60)
     print('TaskMCP Agent - Interactive Mode')
     print(f'Model: {model}')
+    print(f'Language: {current_language_name}')
     print('Type "exit" or "quit" to exit')
     print('Type "clear" or "reset" to clear conversation history')
+    print('Type "language <code>" to change language (e.g., "language en")')
+    print('Type "language clear" to remove language restriction')
+    print('Type "language" to see supported languages')
     print('=' * 60)
     print()
     
@@ -138,9 +159,47 @@ def interactive_mode(model: Optional[str] = None, no_think: bool = False):
                 print('\nConversation history cleared\n')
                 continue
             
+            # Handle language command
+            if query.lower().startswith('language'):
+                parts = query.split()
+                if len(parts) == 1:
+                    # Show supported languages
+                    print('\n' + user_config.list_supported_languages())
+                    print(f'\nCurrent language: {current_language_name}')
+                    if language:
+                        print(f'Language code: {language}')
+                    print('Usage: language <code> (e.g., "language en")')
+                    print('Usage: language clear (to remove language restriction)\n')
+                elif len(parts) == 2:
+                    # Set language or clear
+                    lang_code = parts[1].lower()
+                    if lang_code == 'clear':
+                        # Clear language setting (remove from config)
+                        config = user_config.load_user_config()
+                        if '_default_language' in config:
+                            del config['_default_language']
+                            user_config.save_user_config(config)
+                        language = None
+                        current_language_name = "English (no restriction)"
+                        print('\nLanguage restriction cleared. Using default (English, no restriction).\n')
+                    elif lang_code in user_config.SUPPORTED_LANGUAGES:
+                        if user_config.set_user_language(None, lang_code):
+                            language = lang_code
+                            current_language_name = user_config.SUPPORTED_LANGUAGES[lang_code]
+                            print(f'\nLanguage set to: {current_language_name} ({language})\n')
+                        else:
+                            print(f'\nFailed to set language.\n')
+                    else:
+                        print(f'\nInvalid language code: {lang_code}')
+                        print(user_config.list_supported_languages() + '\n')
+                else:
+                    print('\nUsage: language <code> (e.g., "language en")')
+                    print('Usage: language clear (to remove language restriction)\n')
+                continue
+            
             print()
             # Run agent and update conversation history
-            messages = run_agent_with_ui(query, model, no_think, messages)
+            messages = run_agent_with_ui(query, model, no_think, messages, language)
             print()
         except KeyboardInterrupt:
             print('\n\nGoodbye!')
@@ -183,16 +242,24 @@ Examples:
         action='store_true',
         help='Disable thinking mode (add /no_think to system prompt)'
     )
+    parser.add_argument(
+        '--language', '-l',
+        default=None,
+        help='Language code (e.g., zh, en, ja). Default: from user config or zh'
+    )
     
     args = parser.parse_args()
     
     # Use config default if model not specified
     model = args.model if args.model else _default_model
     
+    # Get language preference
+    language = args.language if args.language else None
+    
     if args.interactive:
-        interactive_mode(model, args.no_think)
+        interactive_mode(model, args.no_think, language)
     elif args.query:
-        run_agent_with_ui(args.query, model, args.no_think)
+        run_agent_with_ui(args.query, model, args.no_think, None, language)
     else:
         parser.print_help()
 
