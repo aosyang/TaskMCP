@@ -271,13 +271,16 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
               aria-expanded={!childrenFolded}
               style={{
                 cursor: 'pointer',
-                fontSize: '10px',
+                fontSize: 'var(--font-size-xs)',
                 color: 'var(--text-muted)',
                 userSelect: 'none',
-                width: '12px',
-                minWidth: '12px',
-                minHeight: '24px',
-                textAlign: 'center',
+                width: '14px',
+                height: '14px',
+                minWidth: '14px',
+                minHeight: '14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
                 background: 'transparent',
                 border: 'none',
                 padding: 0,
@@ -299,7 +302,7 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
             onChange={() => onToggle(task.id)}
             aria-label={`Mark task "${task.task}" as ${task.done ? 'incomplete' : 'complete'}`}
           />
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'normal', alignSelf: 'center', lineHeight: '1' }}>#{task.id}</span>
+          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', fontWeight: 'normal', alignSelf: 'center', lineHeight: '1' }}>#{task.id}</span>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
             {isEditing ? (
               <input
@@ -321,13 +324,13 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
                   onDoubleClick={handleDoubleClick}
                   style={{ 
                     fontWeight: '600', 
-                    fontSize: '14px',
+                    fontSize: 'var(--font-size-base)',
                     wordBreak: 'break-word',
                     overflowWrap: 'break-word',
                     minWidth: 0
                   }}
                 >
-                  {task.is_current && <span style={{ fontSize: '12px', marginRight: '6px' }} aria-label="Current task">▶️</span>}
+                  {task.is_current && <span style={{ fontSize: 'var(--font-size-sm)', marginRight: '6px' }} aria-label="Current task">▶️</span>}
                   {task.task || '(Untitled task)'}
                 </span>
               </>
@@ -499,7 +502,7 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
                 aria-expanded={showComments}
                 style={{
                   cursor: 'pointer',
-                  fontSize: '12px',
+                  fontSize: 'var(--font-size-sm)',
                   color: 'var(--text-muted)',
                   marginBottom: '8px',
                   display: 'flex',
@@ -535,7 +538,7 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
                   minHeight: `${commentHeight}px`,
                   resize: 'vertical', 
                   fontFamily: 'inherit',
-                  fontSize: '16px',
+                  fontSize: 'var(--font-size-md)',
                   padding: '8px',
                   background: 'var(--bg-tertiary)',
                   color: 'var(--text-primary)',
@@ -749,7 +752,7 @@ export function ListView({
         zIndex: 99,
         boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
       }}>
-        <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)', marginRight: '8px' }}>
+        <span style={{ fontSize: 'var(--font-size-base)', fontWeight: '600', color: 'var(--text-secondary)', marginRight: '8px' }}>
           Comments:
         </span>
         <button
@@ -760,19 +763,8 @@ export function ListView({
               setCommentsExpanded('none');
             }
           }}
+          className="btn-comments"
           aria-label="Collapse all comments"
-          style={{
-            padding: '6px 12px',
-            fontSize: '12px',
-            border: '1px solid var(--border-primary)',
-            borderRadius: '4px',
-            background: 'var(--bg-secondary)',
-            color: 'var(--text-primary)',
-            cursor: 'pointer',
-            fontWeight: '500',
-            minHeight: '24px',
-            minWidth: '24px'
-          }}
           title="Collapse all comments"
         >
           Collapse All
@@ -785,19 +777,8 @@ export function ListView({
               setCommentsExpanded('all');
             }
           }}
+          className="btn-comments"
           aria-label="Expand all comments"
-          style={{
-            padding: '6px 12px',
-            fontSize: '12px',
-            border: '1px solid var(--border-primary)',
-            borderRadius: '4px',
-            background: 'var(--bg-secondary)',
-            color: 'var(--text-primary)',
-            cursor: 'pointer',
-            fontWeight: '500',
-            minHeight: '24px',
-            minWidth: '24px'
-          }}
           title="Expand all comments"
         >
           Expand All
@@ -839,9 +820,9 @@ export function ListView({
           boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '14px' }}>🎯</span>
-            <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>Focus Mode</span>
-            <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+            <span style={{ fontSize: 'var(--font-size-base)' }}>🎯</span>
+            <span style={{ fontSize: 'var(--font-size-base)', fontWeight: '600', color: 'var(--text-primary)' }}>Focus Mode</span>
+            <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)' }}>
               Viewing: {findTaskById(tasks, focusedTaskId)?.task}
             </span>
           </div>
@@ -923,7 +904,7 @@ export function ListView({
             height: '60px',
             minWidth: '60px',
             minHeight: '60px',
-            fontSize: '24px',
+            fontSize: 'var(--font-size-xl)',
             cursor: 'pointer',
             boxShadow: '0 4px 8px var(--shadow)',
             display: 'flex',

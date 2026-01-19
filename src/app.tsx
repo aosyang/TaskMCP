@@ -480,7 +480,7 @@ function App() {
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            fontSize: '14px',
+            fontSize: 'var(--font-size-base)',
             fontWeight: '500',
             opacity: 0,
             animation: toastFadingOut ? 'toastFadeOut 0.3s ease-out forwards' : 'toastFadeIn 0.3s ease-out forwards',
@@ -503,6 +503,7 @@ function App() {
                   setShowOutliner(!showOutliner);
                 }
               }}
+              className="theme-toggle"
               aria-label={showOutliner ? "Hide outline" : "Show outline"}
               aria-expanded={showOutliner}
               style={{
@@ -510,18 +511,8 @@ function App() {
                 left: showOutliner ? '270px' : '10px',
                 top: `${stickyOffset}px`,
                 zIndex: 1001,
-                padding: '8px 12px',
-                fontSize: '14px',
-                background: 'var(--bg-secondary)',
-                color: 'var(--text-primary)',
-                border: '1px solid var(--border-primary)',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                boxShadow: '0 2px 4px var(--shadow)',
-                minHeight: '44px',
-                minWidth: '44px',
                 transition: 'left 0.3s ease',
-                touchAction: 'manipulation'
+                boxShadow: '0 2px 4px var(--shadow)'
               }}
               title={showOutliner ? "Hide outline" : "Show outline"}
             >
@@ -622,21 +613,10 @@ function App() {
                     setShowWorkspaceManager(!showWorkspaceManager);
                   }
                 }}
+                className="theme-toggle"
                 aria-label="Manage workspaces"
                 aria-expanded={showWorkspaceManager}
-                style={{
-                  padding: '8px 12px',
-                  fontSize: '14px',
-                  cursor: 'pointer',
-                  background: 'var(--bg-tertiary)',
-                  border: '1px solid var(--border-primary)',
-                  borderRadius: '4px',
-                  color: 'var(--text-primary)',
-                  minHeight: '44px',
-                  minWidth: '44px',
-                  flexShrink: 0,
-                  whiteSpace: 'nowrap'
-                }}
+                style={{ flexShrink: 0, whiteSpace: 'nowrap' }}
               >
                 ⚙️ {showManageText && ' Manage'}
               </button>
@@ -669,7 +649,7 @@ function App() {
                     style={{ 
                       flex: 1, 
                       padding: '8px', 
-                      fontSize: '16px',
+                      fontSize: 'var(--font-size-md)',
                       background: 'var(--bg-secondary)',
                       color: 'var(--text-primary)',
                       border: '1px solid var(--border-primary)',
@@ -716,7 +696,6 @@ function App() {
                             }}
                             className="workspace-btn"
                             aria-label={`Switch to workspace ${ws}`}
-                            style={{ padding: '4px 8px', fontSize: '12px', minHeight: '24px', minWidth: '24px' }}
                           >
                             Switch
                           </button>
@@ -731,7 +710,6 @@ function App() {
                           }}
                           className="workspace-btn"
                           aria-label={`Rename workspace ${ws}`}
-                          style={{ padding: '4px 8px', fontSize: '12px', minHeight: '24px', minWidth: '24px' }}
                         >
                           Rename
                         </button>
@@ -746,12 +724,6 @@ function App() {
                             }}
                             className="workspace-btn workspace-btn-delete"
                             aria-label={`Delete workspace ${ws}`}
-                            style={{ 
-                              padding: '4px 8px', 
-                              fontSize: '12px',
-                              minHeight: '24px',
-                              minWidth: '24px'
-                            }}
                           >
                             Delete
                           </button>
@@ -809,28 +781,9 @@ function App() {
                       input.focus();
                     }
                   }}
+                  className="btn-clear"
                   aria-label="Clear input"
-                  style={{
-                    flex: 1,
-                    padding: '12px 24px',
-                    background: 'var(--btn-delete-bg)',
-                    color: 'var(--btn-delete-color)',
-                    border: '1px solid var(--btn-delete-border)',
-                    borderRadius: '10px',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    touchAction: 'manipulation',
-                    minHeight: '44px',
-                    minWidth: '44px',
-                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'var(--btn-delete-hover)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'var(--btn-delete-bg)';
-                  }}
+                  style={{ flex: 1 }}
                 >
                   ❌ Clear
                 </button>

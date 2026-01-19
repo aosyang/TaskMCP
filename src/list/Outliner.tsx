@@ -40,7 +40,7 @@ export function Outliner({ tasks, onScrollToTask, findCurrentTask }: OutlinerPro
             paddingTop: '4px',
             paddingBottom: '4px',
             cursor: 'pointer',
-            fontSize: '13px',
+            fontSize: 'var(--font-size-base)',
             borderRadius: '8px',
             background: isCurrent ? 'var(--bg-current)' : 'transparent',
             transition: 'background 0.2s ease, transform 0.15s ease'
@@ -158,7 +158,7 @@ export function Outliner({ tasks, onScrollToTask, findCurrentTask }: OutlinerPro
     >
       <div
         style={{
-          fontSize: '11px',
+          fontSize: 'var(--font-size-xs)',
           fontWeight: '700',
           color: 'var(--text-secondary)',
           marginBottom: '16px',

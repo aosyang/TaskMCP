@@ -31,6 +31,14 @@
             /* Typography */
             --font-display: 'Manrope', -apple-system, sans-serif;
             --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+            
+            /* Typography - Font Sizes */
+            --font-size-xs: 10px;    /* Extra small: icon buttons */
+            --font-size-sm: 12px;    /* Small: auxiliary text, small buttons */
+            --font-size-base: 14px;  /* Base: main text, buttons */
+            --font-size-md: 16px;    /* Medium: input fields, important text */
+            --font-size-lg: 18px;    /* Large: icons */
+            --font-size-xl: 24px;    /* Extra large: large icons */
             --bg-done: #e8f5e9;
             --bg-current: #fff9e6;
             --border-done: #4caf50;
@@ -369,6 +377,28 @@
             outline: 2px solid var(--link-color);
             outline-offset: 2px;
         }
+        /* Clear button - large size with delete color scheme */
+        .btn-clear {
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-size: 14px;
+            min-height: 44px;
+            min-width: 44px;
+            background: var(--btn-delete-bg);
+            color: var(--btn-delete-color);
+            border: 1px solid var(--btn-delete-border);
+            font-weight: 600;
+            cursor: pointer;
+            touch-action: manipulation;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .btn-clear:hover {
+            background: var(--btn-delete-hover);
+        }
+        .btn-clear:focus-visible {
+            outline: 2px solid var(--link-color);
+            outline-offset: 2px;
+        }
         .task-list {
             list-style: none;
         }
@@ -589,6 +619,28 @@
         .btn-set-current:hover {
             background: var(--btn-current-hover);
         }
+        /* Comments control buttons */
+        .btn-comments {
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            min-height: 24px;
+            min-width: 24px;
+            border: 1px solid var(--border-primary);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            touch-action: manipulation;
+        }
+        .btn-comments:hover {
+            background: var(--bg-hover);
+        }
+        .btn-comments:focus-visible {
+            outline: 2px solid var(--link-color);
+            outline-offset: 2px;
+        }
         .children {
             margin-left: 30px;
             margin-top: 8px;
@@ -700,11 +752,11 @@
         /* Workspace action buttons */
         .workspace-btn {
             padding: 4px 8px;
-            fontSize: 12px;
+            font-size: 12px;
             background: var(--bg-secondary);
             color: var(--text-primary);
             border: 1px solid var(--border-primary);
-            borderRadius: 4px;
+            border-radius: 8px;
             cursor: pointer;
             touch-action: manipulation;
             min-height: 24px;
@@ -760,6 +812,14 @@
         button, a, input[type="checkbox"], input[type="radio"] {
             touch-action: manipulation;
         }
+        
+        /* Typography - Font Size Utility Classes */
+        .text-xs { font-size: var(--font-size-xs); }
+        .text-sm { font-size: var(--font-size-sm); }
+        .text-base { font-size: var(--font-size-base); }
+        .text-md { font-size: var(--font-size-md); }
+        .text-lg { font-size: var(--font-size-lg); }
+        .text-xl { font-size: var(--font-size-xl); }
     </style>
 </head>
 <body>
