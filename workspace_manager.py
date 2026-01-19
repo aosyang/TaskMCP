@@ -91,7 +91,6 @@ def init_db(workspace_name):
             parent_id INTEGER,
             position INTEGER DEFAULT 0,
             comments TEXT DEFAULT '',
-            color TEXT DEFAULT '',
             board_x REAL DEFAULT 0,
             board_y REAL DEFAULT 0,
             board_width REAL DEFAULT 240,

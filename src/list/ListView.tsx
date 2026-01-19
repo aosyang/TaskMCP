@@ -21,7 +21,7 @@ import { renderMarkdown, Task } from '../utils';
 interface TaskItemProps {
   task: Task;
   onToggle: (id: number) => void;
-  onEdit: (id: number, task?: string, comments?: string, color?: string) => void;
+  onEdit: (id: number, task?: string, comments?: string) => void;
   onDelete: (id: number) => void;
   onAddChild: (parentId: number, task: string) => void;
   onReorder: (updates: { id: number; position: number; parent_id: number | null }[]) => void;
@@ -44,8 +44,6 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
   });
   const [commentsText, setCommentsText] = useState(task.comments || '');
   const [isEditingComments, setIsEditingComments] = useState(false);
-  // const [showColorPicker, setShowColorPicker] = useState(false);
-  // const [tempColor, setTempColor] = useState(task.color || '#ffffff');
   const [childrenFolded, setChildrenFolded] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
   const [isHoveringTitle, setIsHoveringTitle] = useState(false);
@@ -407,9 +405,6 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
                   💬
                 </button>
               )}
-              {/* <button className="btn btn-color" onClick={() => setShowColorPicker(!showColorPicker)} title="Change color">
-                🎨
-              </button> */}
               <button 
                 className="btn btn-delete" 
                 onClick={() => onDelete(task.id)}
@@ -488,31 +483,6 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
               </button>
             </div>
           )}
-
-          {/* Color picker temporarily disabled */}
-        {/* 
-        {!isDragging && showColorPicker && (
-          <div className="color-picker">
-            <input
-              type="color"
-              value={tempColor}
-              onChange={(e) => setTempColor(e.target.value)}
-            />
-            <button className="btn" onClick={() => {
-              onEdit(task.id, undefined, undefined, tempColor);
-              setShowColorPicker(false);
-            }}>
-              ✓
-            </button>
-            <button className="btn" onClick={() => {
-              setTempColor(task.color || '#ffffff');
-              setShowColorPicker(false);
-            }}>
-              ✕
-            </button>
-          </div>
-        )} 
-        */}
 
         {!isDragging && (commentsText || showComments) && (
           <div className="comments-section" style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border-primary)' }}>
@@ -702,7 +672,7 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
 interface ListViewProps {
   tasks: Task[];
   onToggle: (id: number) => void;
-  onEdit: (id: number, task?: string, comments?: string, color?: string) => void;
+  onEdit: (id: number, task?: string, comments?: string) => void;
   onDelete: (id: number) => void;
   onAddChild: (parentId: number, task: string) => void;
   onReorder: (updates: { id: number; position: number; parent_id: number | null }[]) => void;

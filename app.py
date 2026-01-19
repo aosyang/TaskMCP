@@ -41,7 +41,6 @@ def build_tree(tasks, parent_id=None, current_task_id=None):
                 'parent_id': task['parent_id'],
                 'position': task['position'],
                 'comments': task.get('comments', ''),
-                'color': task.get('color', ''),
                 'is_current': task['id'] == current_task_id,
                 'children': children
             })
@@ -92,10 +91,9 @@ def add_task():
     result = cursor.fetchone()
     position = (result['max_pos'] or -1) + 1
     
-    color = data.get('color', '')
     cursor = conn.execute(
-        'INSERT INTO tasks (task, parent_id, position, color) VALUES (?, ?, ?, ?)',
-        (task, parent_id, position, color)
+        'INSERT INTO tasks (task, parent_id, position) VALUES (?, ?, ?)',
+        (task, parent_id, position)
     )
     conn.commit()
     new_id = cursor.lastrowid
@@ -109,7 +107,6 @@ def edit_task(id):
     data = request.get_json()
     task = data.get('task')
     comments = data.get('comments')
-    color = data.get('color')
     
     conn = get_db()
     
@@ -118,9 +115,6 @@ def edit_task(id):
     
     if comments is not None:
         conn.execute('UPDATE tasks SET comments = ? WHERE id = ?', (comments, id))
-    
-    if color is not None:
-        conn.execute('UPDATE tasks SET color = ? WHERE id = ?', (color, id))
     
     conn.commit()
     conn.close()

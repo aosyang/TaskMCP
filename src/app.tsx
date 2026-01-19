@@ -96,11 +96,10 @@ function App() {
     await fetch(`/toggle/${id}`);
   };
 
-  const handleEdit = async (id: number, task?: string, comments?: string, color?: string) => {
+  const handleEdit = async (id: number, task?: string, comments?: string) => {
     const body: any = {};
     if (task !== undefined) body.task = task;
     if (comments !== undefined) body.comments = comments;
-    if (color !== undefined) body.color = color;
     
     await fetch(`/edit/${id}`, {
       method: 'POST',

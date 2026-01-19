@@ -177,7 +177,7 @@ def run_agent_for_telegram(query: str, model: str = None, no_think: bool = False
     # Define batch tools that should be grouped together
     BATCH_TOOLS = {
         'add_task', 'add_task_with_parent', 'update_task', 
-        'delete_task', 'toggle_task', 'set_color'
+        'delete_task', 'toggle_task'
     }
     
     # Track batch operations

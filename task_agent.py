@@ -240,7 +240,6 @@ def get_available_functions() -> Dict[str, Callable]:
         'toggle_task': extract_function(mcp_server.toggle_task),
         'delete_task': extract_function(mcp_server.delete_task),
         'get_task': extract_function(mcp_server.get_task),
-        'set_color': extract_function(mcp_server.set_color),
         'search_tasks': extract_function(mcp_server.search_tasks),
         'search_tasks_all_workspaces': extract_function(mcp_server.search_tasks_all_workspaces),
         'set_current_task': extract_function(mcp_server.set_current_task),

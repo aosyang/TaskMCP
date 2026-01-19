@@ -34,7 +34,6 @@ export interface Task {
   parent_id: number | null;
   position: number;
   comments: string;
-  color: string;
   is_current: boolean;
   board_x: number;
   board_y: number;

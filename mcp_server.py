@@ -159,7 +159,7 @@ def list_tasks() -> str:
     header = f"Tasks in workspace '{workspace}':\n"
     return header + "\n".join(result_lines) if result_lines else f"No tasks found in workspace '{workspace}'"
 
-def _add_task_impl(task: str, parent_id: int | None, color: str) -> str:
+def _add_task_impl(task: str, parent_id: int | None) -> str:
     """Internal implementation for adding a task"""
     # Convert string parameters to int if needed (FastMCP may serialize ints as strings)
     if parent_id is not None:
@@ -180,8 +180,8 @@ def _add_task_impl(task: str, parent_id: int | None, color: str) -> str:
     position = cursor.fetchone()[0]
     
     cursor.execute(
-        "INSERT INTO tasks (task, done, parent_id, position, comments, color) VALUES (?, 0, ?, ?, '', ?)",
-        (task, parent_id, position, color)
+        "INSERT INTO tasks (task, done, parent_id, position, comments) VALUES (?, 0, ?, ?, '')",
+        (task, parent_id, position)
     )
     conn.commit()
     task_id = cursor.lastrowid
@@ -191,42 +191,39 @@ def _add_task_impl(task: str, parent_id: int | None, color: str) -> str:
     return f"Added task #{task_id}: {task}"
 
 @mcp.tool()
-def add_task(task: str, color: str = '') -> str:
+def add_task(task: str) -> str:
     """Add a new top-level task item to current workspace
     
     Args:
         task: The task description
-        color: Optional background color (hex or color name)
     """
-    return _add_task_impl(task, None, color)
+    return _add_task_impl(task, None)
 
 @mcp.tool()
-def add_task_with_parent(task: str, parent_id: int, color: str = '') -> str:
+def add_task_with_parent(task: str, parent_id: int) -> str:
     """Add a new subtask item to current workspace
     
     Args:
         task: The task description
         parent_id: Parent task ID to create a subtask
-        color: Optional background color (hex or color name)
     """
-    return _add_task_impl(task, parent_id, color)
+    return _add_task_impl(task, parent_id)
 
 @mcp.tool()
-def update_task(task_id: int, task: str | None = None, comments: str | None = None, color: str | None = None) -> str:
-    """Update a task's description, comments, or color
+def update_task(task_id: int, task: str | None = None, comments: str | None = None) -> str:
+    """Update a task's description or comments
     
     Args:
         task_id: The ID of the task to update
         task: New task description (optional)
         comments: New comments (optional, supports markdown: **bold**, *italic*, [links](url), lists, code, etc.)
-        color: New background color (optional, hex or color name)
     
     Note:
         If updating task comments repeatedly fails, try using update_task_comments_from_file
         to update comments from a text file instead.
     """
-    if task is None and comments is None and color is None:
-        return "Error: Must provide task, comments, or color to update"
+    if task is None and comments is None:
+        return "Error: Must provide task or comments to update"
     
     conn = get_db()
     cursor = conn.cursor()
@@ -239,9 +236,6 @@ def update_task(task_id: int, task: str | None = None, comments: str | None = No
     if comments is not None:
         updates.append("comments = ?")
         params.append(comments)
-    if color is not None:
-        updates.append("color = ?")
-        params.append(color)
     params.append(task_id)
     
     cursor.execute(f"UPDATE tasks SET {', '.join(updates)} WHERE id = ?", params)
@@ -357,23 +351,6 @@ def get_task(task_id: int) -> str:
     comments = f"\nComments (markdown): {task['comments']}" if task["comments"] else ""
     
     return f"Task #{task['id']} {parent}\nStatus: {status}\nTask: {task['task']}{comments}"
-
-@mcp.tool()
-def set_color(task_id: int, color: str) -> str:
-    """Set background color for a task item
-    
-    Args:
-        task_id: The ID of the task to colorize
-        color: Background color (hex like '#ff0000' or color name like 'lightblue')
-    """
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("UPDATE tasks SET color = ? WHERE id = ?", (color, task_id))
-    conn.commit()
-    conn.close()
-    
-    notify_tasks_updated()
-    return f"Set color '{color}' for task #{task_id}"
 
 @mcp.tool()
 def search_tasks(query: str) -> str:
