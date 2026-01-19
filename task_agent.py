@@ -74,6 +74,92 @@ def extract_function(tool_obj):
     return tool_obj
 
 
+def build_ollama_tool_dict(tool_obj):
+    """Build Ollama tool description dictionary from FastMCP tool object
+    
+    Args:
+        tool_obj: FastMCP FunctionTool object
+        
+    Returns:
+        Dictionary in Ollama tool format with name, description, and parameters
+    """
+    if hasattr(tool_obj, 'name') and hasattr(tool_obj, 'description') and hasattr(tool_obj, 'parameters'):
+        # FastMCP tool object
+        return {
+            'type': 'function',
+            'function': {
+                'name': tool_obj.name,
+                'description': tool_obj.description,
+                'parameters': tool_obj.parameters
+            }
+        }
+    return None
+
+
+def get_ollama_tools() -> list:
+    """Get list of Ollama tool dictionaries from FastMCP tools
+    
+    Returns:
+        List of tool dictionaries in Ollama format
+    """
+    tools = []
+    
+    # Get FastMCP tools
+    if hasattr(mcp_server.mcp, '_tool_manager'):
+        tool_manager = mcp_server.mcp._tool_manager
+        if hasattr(tool_manager, '_tools'):
+            mcp_tools = tool_manager._tools
+            
+            for name, tool_obj in mcp_tools.items():
+                tool_dict = build_ollama_tool_dict(tool_obj)
+                if tool_dict:
+                    tools.append(tool_dict)
+    
+    # Add manual tool definitions for non-FastMCP tools
+    # Time/Date utilities
+    time_tools = [
+        {
+            'type': 'function',
+            'function': {
+                'name': 'get_current_time',
+                'description': 'Get the current time\n\nReturns:\n    Current time as string (HH:MM:SS)',
+                'parameters': {
+                    'type': 'object',
+                    'properties': {},
+                    'required': []
+                }
+            }
+        },
+        {
+            'type': 'function',
+            'function': {
+                'name': 'get_current_date',
+                'description': 'Get the current date\n\nReturns:\n    Current date as string (YYYY-MM-DD)',
+                'parameters': {
+                    'type': 'object',
+                    'properties': {},
+                    'required': []
+                }
+            }
+        },
+        {
+            'type': 'function',
+            'function': {
+                'name': 'get_current_datetime',
+                'description': 'Get the current date and time\n\nReturns:\n    Current date and time as string (YYYY-MM-DD HH:MM:SS)',
+                'parameters': {
+                    'type': 'object',
+                    'properties': {},
+                    'required': []
+                }
+            }
+        }
+    ]
+    tools.extend(time_tools)
+    
+    return tools
+
+
 # Time/Date utility functions
 def get_current_time() -> str:
     """Get the current time
@@ -260,12 +346,25 @@ def process_tool_calls(
         if before_chat_callback:
             before_chat_callback()
         
+        # Get Ollama tool dictionaries (with structured parameters)
+        ollama_tools = get_ollama_tools()
+        
         try:
-            response = client.chat(
-                model=model,
-                messages=messages,
-                tools=list(available_functions.values()),
-            )
+            # Try using tool dictionaries first (if Ollama supports it)
+            # If not supported, fall back to function objects
+            try:
+                response = client.chat(
+                    model=model,
+                    messages=messages,
+                    tools=ollama_tools,
+                )
+            except (TypeError, ValueError) as e:
+                # Fall back to function objects if dictionaries not supported
+                response = client.chat(
+                    model=model,
+                    messages=messages,
+                    tools=list(available_functions.values()),
+                )
         except Exception as e:
             # If error occurs, add error message and break
             messages.append({
@@ -333,28 +432,13 @@ def run_agent(
     
     system_prompt += """
 
-You can use the following tools to help users:
-- Workspace management: view, switch, create, delete workspaces
-- Task management: list, add, update, delete, search tasks
-- Task operations: mark complete, set color, move tasks, etc.
-- Time/Date utilities: get current time, date, or datetime
+You have access to various tools for task and workspace management. The tool definitions include complete parameter information (names, types, required/optional status) - use them exactly as specified.
 
 CRITICAL RULE - Task ID Verification:
 When users refer to tasks by name or description (e.g., "Task 1", "Example task", "Project planning"), you MUST ALWAYS:
 1. First use list_tasks or search_tasks to find the actual task IDs
 2. Match the task names/descriptions to their corresponding database IDs
 3. Only then use the correct task IDs for any operation
-
-This rule applies to ALL operations that require task_id parameter:
-- delete_task(task_id) - Delete a task
-- update_task(task_id, ...) - Update task content/comments/color
-- toggle_task(task_id) - Mark task as complete/incomplete
-- set_color(task_id, color) - Set task background color
-- get_task(task_id) - Get task details
-- move_task(task_id, ...) - Move/reorder tasks
-- move_task_as_child(task_id, as_child_of) - Move task as child
-- move_task_after(task_id, after_task_id) - Move task after another
-- set_current_task(task_id) - Set current working task
 
 Task IDs are unique database identifiers, NOT sequential numbers or display order. 
 A task named "Task 1" may have ID 41, not ID 1. 
@@ -377,8 +461,7 @@ Response Guidelines:
 - Keep responses focused and avoid unnecessary verbosity. Only provide additional suggestions if the user asks for help or guidance.
 - When operations complete successfully, confirm briefly without repeating all available operations.
 
-When users need to perform task management operations, use the appropriate tools.
-When users ask about the current time or date, use the time/date utility tools."""
+Use the appropriate tools based on user requests. All tool parameters are defined in the tool schemas - use them exactly as specified."""
     
     if no_think:
         system_prompt += "\n/no_think"
@@ -400,12 +483,25 @@ When users ask about the current time or date, use the time/date utility tools."
     if before_chat_callback:
         before_chat_callback()
     
+    # Get Ollama tool dictionaries (with structured parameters)
+    ollama_tools = get_ollama_tools()
+    
     try:
-        response = client.chat(
-            model=model,
-            messages=messages,
-            tools=list(available_functions.values()),
-        )
+        # Try using tool dictionaries first (if Ollama supports it)
+        # If not supported, fall back to function objects
+        try:
+            response = client.chat(
+                model=model,
+                messages=messages,
+                tools=ollama_tools,
+            )
+        except (TypeError, ValueError) as e:
+            # Fall back to function objects if dictionaries not supported
+            response = client.chat(
+                model=model,
+                messages=messages,
+                tools=list(available_functions.values()),
+            )
     except Exception as e:
         error_msg = f"Error: Failed to call model: {str(e)}"
         if return_text:
