@@ -262,6 +262,10 @@ def update_task_comments_from_file(task_id: int, file_path: str) -> str:
     Examples:
         - update_task_comments_from_file(10, "comments.md") - Update task #10's comments from comments.md
         - update_task_comments_from_file(5, "path/to/notes.txt") - Update task #5's comments from notes.txt
+    
+    IMPORTANT: If using a temporary file, you MUST wait 1 second after calling this function
+    before deleting the temporary file. This ensures the file is fully read before deletion.
+    Failure to wait may result in update failures due to race conditions.
     """
     # Convert string to int if needed
     task_id = int(task_id) if isinstance(task_id, str) else task_id
