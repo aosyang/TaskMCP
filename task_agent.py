@@ -339,6 +339,39 @@ You can use the following tools to help users:
 - Task operations: mark complete, set color, move tasks, etc.
 - Time/Date utilities: get current time, date, or datetime
 
+CRITICAL RULE - Task ID Verification:
+When users refer to tasks by name or description (e.g., "Task 1", "Example task", "Project planning"), you MUST ALWAYS:
+1. First use list_tasks or search_tasks to find the actual task IDs
+2. Match the task names/descriptions to their corresponding database IDs
+3. Only then use the correct task IDs for any operation
+
+This rule applies to ALL operations that require task_id parameter:
+- delete_task(task_id) - Delete a task
+- update_task(task_id, ...) - Update task content/comments/color
+- toggle_task(task_id) - Mark task as complete/incomplete
+- set_color(task_id, color) - Set task background color
+- get_task(task_id) - Get task details
+- move_task(task_id, ...) - Move/reorder tasks
+- move_task_as_child(task_id, as_child_of) - Move task as child
+- move_task_after(task_id, after_task_id) - Move task after another
+- set_current_task(task_id) - Set current working task
+
+Task IDs are unique database identifiers, NOT sequential numbers or display order. 
+A task named "Task 1" may have ID 41, not ID 1. 
+A task named "Task 2" may have ID 42, not ID 2.
+The task list display order does NOT correspond to task IDs.
+
+NEVER assume task IDs based on:
+- Task names containing numbers (e.g., "Task 1" ≠ ID 1)
+- Display order in list_tasks output
+- Sequential numbering in task descriptions
+- Position in hierarchical structure
+
+ALWAYS verify task IDs by:
+- Calling list_tasks first to see the full task structure with IDs
+- Using search_tasks to find tasks by name/description
+- Matching the exact task name/description to its ID before any operation
+
 When users need to perform task management operations, use the appropriate tools.
 When users ask about the current time or date, use the time/date utility tools."""
     
