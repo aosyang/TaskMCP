@@ -275,21 +275,21 @@ def run_agent_for_telegram(query: str, model: str = None, no_think: bool = False
             
             # Send individual notification for non-batch tools
             tool_display = tool_name.replace('_', ' ').title()
-            args_str = ""
+            
+            # Format arguments, each on separate line with blockquote
+            args_lines = []
             if args:
-                args_parts = []
                 for key, value in args.items():
                     value_str = str(value)
                     if len(value_str) > 50:
                         value_str = value_str[:50] + "..."
-                    args_parts.append(f"{key}: {value_str}")
-                args_str = ", ".join(args_parts)
-                if len(args_str) > 150:
-                    args_str = args_str[:150] + "..."
+                    args_lines.append(f"> {key}: {value_str}")
             
-            notification_text = f"🔧 Calling tool: *{tool_display}*"
-            if args_str:
-                notification_text += f"\nArguments: `{args_str}`"
+            # Build notification with MarkdownV2 format using blockquote
+            # Tool name and arguments each on separate line with blockquote prefix
+            notification_text = f"🔧 Calling tool:\n> {tool_display}"
+            if args_lines:
+                notification_text += "\n\nArguments:\n" + "\n".join(args_lines)
             
             # Immediately notify user if async callback is provided
             if async_notify_callback and event_loop:
