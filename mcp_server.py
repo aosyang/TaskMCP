@@ -402,6 +402,50 @@ def search_tasks(query: str) -> str:
     return "\n".join(result)
 
 @mcp.tool()
+def search_tasks_all_workspaces(query: str) -> str:
+    """Search tasks across all workspaces
+    
+    Args:
+        query: Search term to find in task description or comments
+    
+    Returns:
+        JSON string containing array of tasks with workspace information.
+        Each task object contains: task_id, task (description), workspace_name, done (status), and optionally comments.
+    """
+    import json
+    results = []
+    workspaces = list_workspaces()
+    
+    for workspace_name in workspaces:
+        try:
+            conn = get_db(workspace_name)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, task, done, comments FROM tasks WHERE task LIKE ? OR comments LIKE ? ORDER BY position",
+                (f"%{query}%", f"%{query}%")
+            )
+            tasks = cursor.fetchall()
+            conn.close()
+            
+            for task in tasks:
+                comments = task["comments"] if task["comments"] else ""
+                results.append({
+                    "task_id": task["id"],
+                    "task": task["task"],
+                    "workspace_name": workspace_name,
+                    "done": bool(task["done"]),
+                    "comments": comments
+                })
+        except Exception as e:
+            # Skip workspaces with errors (e.g., corrupted database)
+            continue
+    
+    if not results:
+        return json.dumps([])
+    
+    return json.dumps(results, ensure_ascii=False)
+
+@mcp.tool()
 def set_current_task(task_id: int) -> str:
     """Set a task as the current working task
     

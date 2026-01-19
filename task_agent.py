@@ -242,6 +242,7 @@ def get_available_functions() -> Dict[str, Callable]:
         'get_task': extract_function(mcp_server.get_task),
         'set_color': extract_function(mcp_server.set_color),
         'search_tasks': extract_function(mcp_server.search_tasks),
+        'search_tasks_all_workspaces': extract_function(mcp_server.search_tasks_all_workspaces),
         'set_current_task': extract_function(mcp_server.set_current_task),
         'clear_current_task': extract_function(mcp_server.clear_current_task),
         'get_current_task': extract_function(mcp_server.get_current_task),
@@ -487,6 +488,10 @@ Response Guidelines:
 - When list_tasks is called, provide a concise summary of the task list. Do not add extensive operation suggestions unless the user explicitly asks for them.
 - Keep responses focused and avoid unnecessary verbosity. Only provide additional suggestions if the user asks for help or guidance.
 - When operations complete successfully, confirm briefly without repeating all available operations.
+
+Cross-Workspace Search:
+- Use search_tasks_all_workspaces(query) to search across all workspaces at once.
+- For single workspace search, use search_tasks(query).
 
 Use the appropriate tools based on user requests. All tool parameters are defined in the tool schemas - use them exactly as specified."""
     
