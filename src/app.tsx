@@ -576,7 +576,7 @@ function App() {
           </div>
           <div id="main-content" style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: isMobile ? 'block' : 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '10px' }}>
-            <h1 style={{ textWrap: 'balance', marginBottom: isMobile ? '10px' : '0' }}>📝 Task List</h1>
+            <h1 style={{ textWrap: 'balance', marginBottom: isMobile ? '10px' : '0', textAlign: isMobile ? 'center' : 'left' }}>Task List</h1>
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', width: isMobile ? '100%' : 'auto', flexShrink: 0 }}>
               <button 
                 onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
