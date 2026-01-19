@@ -372,6 +372,11 @@ ALWAYS verify task IDs by:
 - Using search_tasks to find tasks by name/description
 - Matching the exact task name/description to its ID before any operation
 
+Response Guidelines:
+- When list_tasks is called, provide a concise summary of the task list. Do not add extensive operation suggestions unless the user explicitly asks for them.
+- Keep responses focused and avoid unnecessary verbosity. Only provide additional suggestions if the user asks for help or guidance.
+- When operations complete successfully, confirm briefly without repeating all available operations.
+
 When users need to perform task management operations, use the appropriate tools.
 When users ask about the current time or date, use the time/date utility tools."""
     
