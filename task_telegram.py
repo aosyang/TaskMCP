@@ -139,7 +139,7 @@ user_conversations: Dict[int, list] = {}
 
 def run_agent_for_telegram(query: str, model: str = None, no_think: bool = False, messages: list = None, 
                            tool_call_notifications: list = None, async_notify_callback = None, event_loop = None,
-                           user_id: int = None):
+                           user_id: int = None, bot = None, chat_id: int = None):
     """Run agent for Telegram bot
     
     This is a wrapper around task_agent.run_agent. The response will be automatically
@@ -169,8 +169,12 @@ def run_agent_for_telegram(query: str, model: str = None, no_think: bool = False
         'current_tool': None,
         'count': 0,
         'results': [],
-        'started': False
+        'started': False,
+        'message_future': None  # Future for batch start message, to edit it when batch completes
     }
+    
+    # Track message futures for editing (tool_name -> future)
+    tool_message_futures = {}
     
     def send_batch_notification():
         """Send notification for completed batch operation"""
@@ -179,8 +183,8 @@ def run_agent_for_telegram(query: str, model: str = None, no_think: bool = False
             tool_display = tool_name.replace('_', ' ').title()
             count = batch_state['count']
             
-            # Create summary notification
-            notification_text = f"✅ Completed: *{tool_display}* ({count} calls)"
+            # Create summary notification with blockquote format
+            notification_text = f"✅ Completed:\n> {tool_display} ({count} calls)"
             
             # Add summary of results (limit to first 3 for readability and to avoid message length issues)
             if batch_state['results']:
@@ -212,8 +216,38 @@ def run_agent_for_telegram(query: str, model: str = None, no_think: bool = False
                 if summary_text:
                     notification_text += "\n" + summary_text
             
-            # Send notification
-            if async_notify_callback and event_loop:
+            # Edit the original batch start message instead of sending a new one
+            if batch_state['message_future'] and bot and chat_id:
+                future = batch_state['message_future']
+                try:
+                    # Get message ID from future (with timeout)
+                    message_id = future.result(timeout=10)
+                    if message_id and event_loop:
+                        # Edit the message
+                        asyncio.run_coroutine_threadsafe(
+                            safe_edit_message_text(bot, chat_id, message_id, notification_text),
+                            event_loop
+                        )
+                    else:
+                        # If we couldn't get message ID, fallback to send new message
+                        if async_notify_callback and event_loop:
+                            asyncio.run_coroutine_threadsafe(
+                                async_notify_callback(notification_text),
+                                event_loop
+                            )
+                except Exception as e:
+                    logger.warning(f"Failed to edit batch notification: {e}")
+                    # Fallback: send new message if edit fails
+                    if async_notify_callback and event_loop:
+                        try:
+                            asyncio.run_coroutine_threadsafe(
+                                async_notify_callback(notification_text),
+                                event_loop
+                            )
+                        except Exception as e2:
+                            logger.warning(f"Failed to send fallback batch notification: {e2}")
+            elif async_notify_callback and event_loop:
+                # Fallback: send new message if we don't have message future
                 try:
                     asyncio.run_coroutine_threadsafe(
                         async_notify_callback(notification_text),
@@ -231,6 +265,7 @@ def run_agent_for_telegram(query: str, model: str = None, no_think: bool = False
             batch_state['count'] = 0
             batch_state['results'] = []
             batch_state['started'] = False
+            batch_state['message_future'] = None
     
     # Create tool call callback (before execution) to log and notify immediately
     def on_tool_call(tool_name: str, args: dict):
@@ -254,16 +289,19 @@ def run_agent_for_telegram(query: str, model: str = None, no_think: bool = False
                 batch_state['count'] = 0
                 batch_state['results'] = []
                 
-                # Send batch start notification
+                # Send batch start notification and save future for later editing
                 tool_display = tool_name.replace('_', ' ').title()
-                notification_text = f"🔧 Starting batch: *{tool_display}*..."
+                notification_text = f"🔧 Starting batch:\n> {tool_display}..."
                 
                 if async_notify_callback and event_loop:
                     try:
-                        asyncio.run_coroutine_threadsafe(
+                        # Send notification and store future for later message ID retrieval
+                        future = asyncio.run_coroutine_threadsafe(
                             async_notify_callback(notification_text),
                             event_loop
                         )
+                        # Store future for later editing when batch completes
+                        batch_state['message_future'] = future
                     except Exception as e:
                         logger.warning(f"Failed to send batch start notification: {e}")
             
@@ -294,10 +332,13 @@ def run_agent_for_telegram(query: str, model: str = None, no_think: bool = False
             # Immediately notify user if async callback is provided
             if async_notify_callback and event_loop:
                 try:
-                    asyncio.run_coroutine_threadsafe(
+                    # Send notification and store future for later message ID retrieval
+                    future = asyncio.run_coroutine_threadsafe(
                         async_notify_callback(notification_text),
                         event_loop
                     )
+                    # Store future for later editing
+                    tool_message_futures[tool_name] = future
                 except Exception as e:
                     logger.warning(f"Failed to schedule tool call notification: {e}")
             
@@ -307,7 +348,7 @@ def run_agent_for_telegram(query: str, model: str = None, no_think: bool = False
     
     # Create tool call callback (after execution) to log and notify
     def on_tool_call_after(tool_name: str, args: dict, result: Any):
-        """Callback after a tool is called"""
+        """Callback after a tool is called - changes 'Calling' message to 'completed'"""
         # Log to console
         logger.info(f"Tool called (after): {tool_name} with args: {args}, result: {result}")
         
@@ -319,17 +360,58 @@ def run_agent_for_telegram(query: str, model: str = None, no_think: bool = False
             if batch_state['current_tool'] == tool_name:
                 batch_state['results'].append(result)
         else:
-            # Non-batch tool: send individual notification immediately
-            # Don't add to tool_call_notifications since we send it immediately via callback
+            # Non-batch tool: send completion notification with same format as calling notification
+            # Only change "Calling tool" to "Tool execution completed"
             tool_display = tool_name.replace('_', ' ').title()
-            notification_text = f"✅ Tool execution completed: *{tool_display}*"
-            if result is not None:
-                result_str = str(result)
-                if len(result_str) > 200:
-                    result_str = result_str[:200] + "..."
-                notification_text += f"\nResult: `{result_str}`"
             
-            if async_notify_callback and event_loop:
+            # Format arguments, each on separate line with blockquote (same as on_tool_call)
+            args_lines = []
+            if args:
+                for key, value in args.items():
+                    value_str = str(value)
+                    if len(value_str) > 50:
+                        value_str = value_str[:50] + "..."
+                    args_lines.append(f"> {key}: {value_str}")
+            
+            # Build notification with same format as on_tool_call, just change prefix
+            notification_text = f"✅ Tool execution completed:\n> {tool_display}"
+            if args_lines:
+                notification_text += "\n\nArguments:\n" + "\n".join(args_lines)
+            
+            # Edit the original message instead of sending a new one
+            if tool_name in tool_message_futures and bot and chat_id:
+                future = tool_message_futures[tool_name]
+                try:
+                    # Get message ID from future (with timeout)
+                    message_id = future.result(timeout=10)
+                    if message_id and event_loop:
+                        # Edit the message
+                        asyncio.run_coroutine_threadsafe(
+                            safe_edit_message_text(bot, chat_id, message_id, notification_text),
+                            event_loop
+                        )
+                        # Remove future after editing
+                        del tool_message_futures[tool_name]
+                    else:
+                        # If we couldn't get message ID, fall through to send new message
+                        if tool_name in tool_message_futures:
+                            del tool_message_futures[tool_name]
+                except Exception as e:
+                    logger.warning(f"Failed to edit tool call notification: {e}")
+                    # Remove future on error
+                    if tool_name in tool_message_futures:
+                        del tool_message_futures[tool_name]
+                    # Fallback: send new message if edit fails
+                    if async_notify_callback and event_loop:
+                        try:
+                            asyncio.run_coroutine_threadsafe(
+                                async_notify_callback(notification_text),
+                                event_loop
+                            )
+                        except Exception as e2:
+                            logger.warning(f"Failed to send fallback notification: {e2}")
+            elif async_notify_callback and event_loop:
+                # Fallback: send new message if we don't have message future
                 try:
                     asyncio.run_coroutine_threadsafe(
                         async_notify_callback(notification_text),
@@ -376,17 +458,56 @@ async def safe_reply_text(update: Update, text: str, parse_mode: str = "Markdown
         update: Telegram update object
         text: Text to send (can be any Markdown format)
         parse_mode: Parse mode to use (default: MarkdownV2)
+    
+    Returns:
+        Message object from Telegram API
     """
     # Convert text to MarkdownV2 format using telegramify-markdown
     cleaned_text = clean_markdownv2_text(text)
     
     try:
-        await update.message.reply_text(cleaned_text, parse_mode=parse_mode)
+        message = await update.message.reply_text(cleaned_text, parse_mode=parse_mode)
+        return message
     except BadRequest as e:
         # If MarkdownV2 parsing fails, fall back to plain text
         if "Can't parse entities" in str(e) or "parse" in str(e).lower():
             logger.warning(f"MarkdownV2 parsing failed, falling back to plain text: {e}")
-            await update.message.reply_text(cleaned_text)
+            message = await update.message.reply_text(cleaned_text)
+            return message
+        else:
+            # Re-raise if it's a different BadRequest error
+            raise
+
+
+async def safe_edit_message_text(bot, chat_id: int, message_id: int, text: str, parse_mode: str = "MarkdownV2"):
+    """Safely edit a message, falling back to plain text if MarkdownV2 parsing fails
+    
+    Args:
+        bot: Telegram bot instance
+        chat_id: Chat ID where the message is located
+        message_id: ID of the message to edit
+        text: New text content (can be any Markdown format)
+        parse_mode: Parse mode to use (default: MarkdownV2)
+    """
+    # Convert text to MarkdownV2 format using telegramify-markdown
+    cleaned_text = clean_markdownv2_text(text)
+    
+    try:
+        await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=cleaned_text,
+            parse_mode=parse_mode
+        )
+    except BadRequest as e:
+        # If MarkdownV2 parsing fails, fall back to plain text
+        if "Can't parse entities" in str(e) or "parse" in str(e).lower():
+            logger.warning(f"MarkdownV2 parsing failed, falling back to plain text: {e}")
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=cleaned_text
+            )
         else:
             # Re-raise if it's a different BadRequest error
             raise
@@ -610,11 +731,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Create async callback for immediate notifications
     async def async_notify(notification_text: str):
-        """Async callback to immediately send notification to user"""
+        """Async callback to immediately send notification to user
+        
+        Returns:
+            Message ID of the sent message, or None if failed
+        """
         try:
-            await safe_reply_text(update, notification_text)
+            message = await safe_reply_text(update, notification_text)
+            return message.message_id if message else None
         except Exception as e:
             logger.warning(f"Failed to send immediate tool call notification: {e}")
+            return None
     
     # Get event loop for async operations
     loop = asyncio.get_event_loop()
@@ -631,7 +758,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             tool_call_notifications,
             async_notify,
             loop,
-            user_id  # Pass user_id for language preference
+            user_id,  # Pass user_id for language preference
+            context.bot,  # Pass bot for message editing
+            chat_id  # Pass chat_id for message editing
         )
         
         # Send tool call after notifications to user (before notifications are sent immediately during execution)
