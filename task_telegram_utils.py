@@ -9,6 +9,11 @@ specifically for MarkdownV2 compatibility.
 Uses telegramify-markdown library for reliable MarkdownV2 conversion.
 """
 
+import os
+import json
+from datetime import datetime
+from typing import Optional, Dict, Any
+
 try:
     import telegramify_markdown
     _HAS_TELEGRAMIFY = True
@@ -224,3 +229,58 @@ def clean_markdownv2_text(text: str) -> str:
         text = text.replace(placeholder, code)
     
     return text
+
+
+def dump_conversation_to_file(
+    user_id: int,
+    username: Optional[str],
+    chat_id: int,
+    conversation_history: Optional[list],
+    output_dir: Optional[str] = None
+) -> tuple[str, str]:
+    """Dump conversation history to a JSON file
+    
+    The file will be saved in a 'dumps' subdirectory for easy access and debugging.
+    
+    Args:
+        user_id: Telegram user ID
+        username: Telegram username (optional)
+        chat_id: Telegram chat ID
+        conversation_history: Conversation history messages list
+        output_dir: Base directory to save the file (default: same directory as this file)
+                   Files will be saved in a 'dumps' subdirectory
+    
+    Returns:
+        Tuple of (filepath, filename)
+    """
+    # Prepare dump data
+    dump_data: Dict[str, Any] = {
+        "user_id": user_id,
+        "username": username,
+        "chat_id": chat_id,
+        "dump_timestamp": datetime.now().isoformat(),
+        "conversation_history": conversation_history if conversation_history else None,
+        "conversation_count": len(conversation_history) if conversation_history else 0
+    }
+    
+    # Convert to JSON
+    json_str = json.dumps(dump_data, ensure_ascii=False, indent=2)
+    
+    # Determine base output directory
+    if output_dir is None:
+        output_dir = os.path.dirname(__file__)
+    
+    # Create dumps subdirectory
+    dumps_dir = os.path.join(output_dir, 'dumps')
+    os.makedirs(dumps_dir, exist_ok=True)
+    
+    # Create file with timestamp
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = f"conversation_dump_{chat_id}_{timestamp}.json"
+    filepath = os.path.join(dumps_dir, filename)
+    
+    # Write to file
+    with open(filepath, 'w', encoding='utf-8') as f:
+        f.write(json_str)
+    
+    return filepath, filename

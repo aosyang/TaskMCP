@@ -48,7 +48,7 @@ except ImportError:
 
 # Telegram bot library
 try:
-    from telegram import Update
+    from telegram import Update, InputFile
     from telegram.constants import ChatAction
     from telegram.error import BadRequest
     from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -58,7 +58,7 @@ except ImportError:
 
 # Import shared agent functionality
 import task_agent
-from task_telegram_utils import clean_markdownv2_text
+from task_telegram_utils import clean_markdownv2_text, dump_conversation_to_file
 
 # Load configuration
 try:
@@ -265,6 +265,7 @@ Commands:
 /start - Show this welcome message
 /clear - Clear conversation history
 /help - Show help information
+/dump - Export conversation history as JSON for debugging
 
 Just send me a message and I'll help you manage your tasks!"""
     
@@ -311,9 +312,57 @@ Examples:
 - "What is the current workspace?"
 - "Mark task #1 as done"
 
-Use /clear to reset conversation history."""
+Use /clear to reset conversation history.
+Use /dump to export conversation history as JSON for debugging."""
     
     await safe_reply_text(update, help_text)
+
+
+async def dump_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /dump command - Export conversation history as JSON"""
+    user_id = update.effective_user.id
+    username = update.effective_user.username
+    chat_id = update.effective_chat.id
+    
+    # Check whitelist
+    if not is_user_allowed(user_id, username):
+        await safe_reply_text(update, "Sorry, you are not authorized to use this bot.")
+        return
+    
+    try:
+        # Get conversation history
+        messages = user_conversations.get(chat_id)
+        
+        # Dump conversation to file using utility function
+        filepath, filename = dump_conversation_to_file(
+            user_id=user_id,
+            username=username,
+            chat_id=chat_id,
+            conversation_history=messages
+        )
+        
+        # Get conversation count for caption
+        conversation_count = len(messages) if messages else 0
+        
+        # Send file to user
+        try:
+            with open(filepath, 'rb') as f:
+                document = InputFile(f, filename=filename)
+                await update.message.reply_document(
+                    document=document,
+                    caption=f"Conversation history exported\nUser ID: {user_id}\nMessage count: {conversation_count}\nFile saved to local dumps/ folder"
+                )
+            
+            # Log file location (file is kept for debugging)
+            logger.info(f"Conversation dump saved: {filepath}")
+        
+        except Exception as e:
+            logger.error(f"Failed to send dump file: {e}")
+            await safe_reply_text(update, f"Export failed: {str(e)}")
+    
+    except Exception as e:
+        logger.error(f"Error in dump_command: {e}")
+        await safe_reply_text(update, f"Error exporting conversation history: {str(e)}")
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -421,6 +470,7 @@ def main():
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("clear", clear_command))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("dump", dump_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     # Start bot
