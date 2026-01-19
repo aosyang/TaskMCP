@@ -44,12 +44,18 @@ A multi-workspace task management system with hierarchical structure, drag-and-d
 - Flask-SocketIO - WebSocket real-time communication
 - SQLite3 - Database
 - FastMCP - MCP server framework
+- Model Provider Abstraction - Support for multiple LLM backends (Ollama, OpenAI)
 
 **Frontend:**
 - React 18 + TypeScript
 - @dnd-kit - Drag and drop sorting
 - Socket.IO Client - Real-time updates
 - esbuild - Build tool
+
+**AI/LLM Integration:**
+- Ollama - Local LLM support (default)
+- OpenAI API - Cloud LLM support
+- Model Provider Abstraction Layer - Easy to add new providers
 
 ## Installation & Setup
 
@@ -108,7 +114,73 @@ port = 5000
 
 **Note:** Python 3.11+ has built-in TOML support. Python < 3.11 requires: `pip install tomli`
 
-### 3. Start Server
+### 3. Configure Model Provider (for CLI and Telegram Bot)
+
+Edit `agent_config.toml` to configure the model provider:
+
+#### Using Ollama (Default)
+
+```toml
+[provider]
+type = "ollama"
+
+[ollama]
+model = "qwen3:14b"
+# base_url = "http://localhost:11434"  # Optional, defaults to http://localhost:11434
+```
+
+#### Using OpenAI
+
+**Recommended: Use environment variable for API key (more secure)**
+
+1. Set the environment variable:
+   ```bash
+   # Windows (PowerShell)
+   $env:OPENAI_API_KEY="sk-..."
+   
+   # Windows (CMD)
+   set OPENAI_API_KEY=sk-...
+   
+   # Linux/Mac
+   export OPENAI_API_KEY=sk-...
+   ```
+   
+   Or create a `.env` file (copy from `.env.example`):
+   ```
+   OPENAI_API_KEY=sk-...
+   ```
+
+2. Configure `agent_config.toml`:
+   ```toml
+   [provider]
+   type = "openai"
+   
+   [openai]
+   model = "gpt-4o"
+   # api_key is optional if OPENAI_API_KEY environment variable is set
+   # base_url = "https://api.openai.com/v1"  # Optional, supports custom endpoints
+   ```
+
+**Alternative: Set API key in config file (less secure)**
+```toml
+[provider]
+type = "openai"
+
+[openai]
+model = "gpt-4o"
+api_key = "sk-..."  # Not recommended for production
+# base_url = "https://api.openai.com/v1"  # Optional, supports custom endpoints
+```
+
+**Backward Compatibility:**
+- If `[provider]` section is not present, the system defaults to Ollama
+- Existing configurations with only `[ollama]` section will continue to work
+
+**Requirements:**
+- For Ollama: `pip install ollama` (included in `requirements-cli.txt`)
+- For OpenAI: `pip install openai`
+
+### 4. Start Server
 
 ```bash
 # Start both Web server and MCP server
@@ -121,7 +193,7 @@ After starting:
   - Network: http://<your-ip>:5000 (shown on startup if network access enabled)
 - MCP Server: http://localhost:8000/mcp
 
-### 4. Configure MCP Client
+### 5. Configure MCP Client
 
 For VS Code, configure `.vscode/mcp.json`:
 
@@ -180,6 +252,33 @@ Each workspace corresponds to an independent SQLite database file in the `worksp
 
 Current active workspace is saved in `workspaces/workspace_config.json`.
 
+## Model Provider Architecture
+
+The system uses a model provider abstraction layer that supports multiple LLM backends:
+
+### Supported Providers
+
+1. **Ollama** (Default)
+   - Local LLM support
+   - Supports `no_think` mode
+   - Supports streaming responses
+
+2. **OpenAI**
+   - Cloud-based LLM support
+   - Supports custom endpoints (e.g., Azure OpenAI)
+   - Supports streaming responses
+
+### Adding New Providers
+
+To add a new model provider:
+
+1. Create a new provider class in `model_providers/` implementing `ModelProvider` interface
+2. Implement required methods: `chat()`, `convert_tools()`
+3. Add provider creation logic in `model_providers/factory.py`
+4. Update `agent_config.toml` validation in `task_agent.py`
+
+See `model_providers/base.py` for the interface definition.
+
 ## Development
 
 ### Modify Frontend Code
@@ -187,4 +286,14 @@ Current active workspace is saved in `workspaces/workspace_config.json`.
 ```bash
 # Edit src/app.tsx then rebuild
 node build.js
+```
+
+### Running Tests
+
+```bash
+# Run model provider unit tests
+python tests/test_model_providers.py
+
+# Run integration tests
+python tests/test_provider_integration.py
 ```

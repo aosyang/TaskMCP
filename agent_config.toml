@@ -1,6 +1,19 @@
 # Agent configuration
 # For CLI and other natural language interfaces
 
+# Provider configuration (optional, defaults to "ollama" if not specified)
+# Supported providers: "ollama", "openai"
+[provider]
+type = "ollama"
+
+# Ollama provider configuration
 [ollama]
 # Default Ollama model to use
 model = "qwen3:14b"
+# base_url = "http://localhost:11434"  # Optional, defaults to http://localhost:11434
+
+# OpenAI provider configuration
+[openai]
+model = "gpt-4o"
+# api_key is optional if OPENAI_API_KEY environment variable is set (recommended)
+# base_url = "https://api.openai.com/v1"  # Optional, defaults to https://api.openai.com/v1

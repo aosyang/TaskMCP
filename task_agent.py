@@ -4,7 +4,7 @@
 TaskMCP Agent Core - Common functionality for CLI and Telegram bot interfaces
 
 This module provides shared agent logic for natural language task management
-using Ollama models with tool calling capabilities.
+using various model providers (Ollama, OpenAI, etc.) with tool calling capabilities.
 """
 
 import os
@@ -22,7 +22,8 @@ except ImportError:
     except ImportError:
         tomllib = None
 
-from ollama import Client
+# Import model provider abstraction
+from model_providers import create_provider, ModelProvider, ModelResponse
 
 # Import all tool functions from MCP server
 import mcp_server
@@ -30,6 +31,9 @@ import mcp_server
 
 def load_agent_config():
     """Load agent configuration from agent_config.toml
+    
+    Supports both old format ([ollama] only) and new format ([provider] + provider-specific sections).
+    For backward compatibility, if [provider] section is not present, defaults to "ollama".
     
     Raises:
         FileNotFoundError: If agent_config.toml does not exist
@@ -54,15 +58,39 @@ def load_agent_config():
     except Exception as e:
         raise ValueError(f"Could not load agent config: {e}")
     
-    if not config or 'ollama' not in config:
+    # Determine provider type
+    if 'provider' in config and 'type' in config['provider']:
+        provider_type = config['provider']['type']
+    else:
+        # Backward compatibility: default to ollama if [provider] section not present
+        provider_type = 'ollama'
+    
+    # Validate provider-specific configuration
+    if provider_type == 'ollama':
+        if 'ollama' not in config:
+            raise ValueError(
+                f"Configuration file '{config_file}' must contain [ollama] section when provider type is 'ollama'."
+            )
+        if 'model' not in config['ollama'] or not config['ollama']['model']:
+            raise ValueError(
+                f"Configuration file '{config_file}' must specify 'model' in [ollama] section."
+            )
+    elif provider_type == 'openai':
+        if 'openai' not in config:
+            raise ValueError(
+                f"Configuration file '{config_file}' must contain [openai] section when provider type is 'openai'."
+            )
+        if 'model' not in config['openai'] or not config['openai']['model']:
+            raise ValueError(
+                f"Configuration file '{config_file}' must specify 'model' in [openai] section."
+            )
+    else:
         raise ValueError(
-            f"Configuration file '{config_file}' must contain [ollama] section."
+            f"Unsupported provider type '{provider_type}'. Supported types: 'ollama', 'openai'"
         )
     
-    if 'model' not in config['ollama'] or not config['ollama']['model']:
-        raise ValueError(
-            f"Configuration file '{config_file}' must specify 'model' in [ollama] section."
-        )
+    # Store provider type in config for easy access
+    config['_provider_type'] = provider_type
     
     return config
 
@@ -74,14 +102,14 @@ def extract_function(tool_obj):
     return tool_obj
 
 
-def build_ollama_tool_dict(tool_obj):
-    """Build Ollama tool description dictionary from FastMCP tool object
+def build_tool_dict(tool_obj):
+    """Build tool description dictionary from FastMCP tool object
     
     Args:
         tool_obj: FastMCP FunctionTool object
         
     Returns:
-        Dictionary in Ollama tool format with name, description, and parameters
+        Dictionary in standard tool format (compatible with Ollama and OpenAI) with name, description, and parameters
     """
     if hasattr(tool_obj, 'name') and hasattr(tool_obj, 'description') and hasattr(tool_obj, 'parameters'):
         # FastMCP tool object
@@ -96,11 +124,11 @@ def build_ollama_tool_dict(tool_obj):
     return None
 
 
-def get_ollama_tools() -> list:
-    """Get list of Ollama tool dictionaries from FastMCP tools
+def get_tool_dicts() -> list:
+    """Get list of tool dictionaries from FastMCP tools
     
     Returns:
-        List of tool dictionaries in Ollama format
+        List of tool dictionaries in standard format (compatible with Ollama and OpenAI)
     """
     tools = []
     
@@ -111,7 +139,7 @@ def get_ollama_tools() -> list:
             mcp_tools = tool_manager._tools
             
             for name, tool_obj in mcp_tools.items():
-                tool_dict = build_ollama_tool_dict(tool_obj)
+                tool_dict = build_tool_dict(tool_obj)
                 if tool_dict:
                     tools.append(tool_dict)
     
@@ -230,11 +258,11 @@ def get_available_functions() -> Dict[str, Callable]:
 
 
 def process_tool_calls(
-    response,
+    response: ModelResponse,
     messages: list,
-    client: Client,
+    provider: ModelProvider,
     available_functions: Dict[str, Callable],
-    model: Optional[str] = None,
+    tool_dicts: list,
     max_iterations: int = 10,
     before_chat_callback: Optional[Callable[[], None]] = None,
     after_chat_callback: Optional[Callable[[], None]] = None,
@@ -244,11 +272,11 @@ def process_tool_calls(
     """Process tool calling loop
     
     Args:
-        response: Initial response from model containing tool calls
+        response: Initial ModelResponse containing tool calls
         messages: Message history list
-        client: Ollama client instance
+        provider: Model provider instance
         available_functions: Dictionary of available tool functions
-        model: Model name (if None, will be loaded from config)
+        tool_dicts: List of tool dictionaries
         max_iterations: Maximum number of tool call iterations
         before_chat_callback: Optional callback to call before each chat request
         after_chat_callback: Optional callback to call after each chat request
@@ -256,22 +284,18 @@ def process_tool_calls(
     Returns:
         Tuple of (final_response, updated_messages)
     """
-    if model is None:
-        config = load_agent_config()
-        model = config['ollama']['model']
-    
     iteration = 0
     
-    while response.message.tool_calls and iteration < max_iterations:
+    while response.has_tool_calls() and iteration < max_iterations:
         iteration += 1
         
         # Add the response message containing tool calls to history (only once)
-        messages.append(response.message.model_dump())
+        messages.append(response.model_dump())
         
         # Process all tool calls
-        for tool in response.message.tool_calls:
-            tool_name = tool.function.name
-            args = tool.function.arguments
+        for tool_call in response.tool_calls:
+            tool_name = tool_call.function.name
+            args = tool_call.function.arguments
             
             # Call tool call callback if provided
             if on_tool_call:
@@ -306,11 +330,14 @@ def process_tool_calls(
                             pass
                     
                     # Add tool call result back to messages
-                    messages.append({
+                    # OpenAI requires tool_call_id, Ollama doesn't need it but it's harmless
+                    tool_message = {
                         'role': 'tool',
                         'content': str(output),
-                        'tool_name': tool_name
-                    })
+                    }
+                    if tool_call.id:
+                        tool_message['tool_call_id'] = tool_call.id
+                    messages.append(tool_message)
                 except Exception as e:
                     error_output = f'Error: {str(e)}'
                     
@@ -321,11 +348,14 @@ def process_tool_calls(
                         except Exception:
                             pass
                     
-                    messages.append({
+                    # Add error result back to messages
+                    tool_message = {
                         'role': 'tool',
                         'content': error_output,
-                        'tool_name': tool_name
-                    })
+                    }
+                    if tool_call.id:
+                        tool_message['tool_call_id'] = tool_call.id
+                    messages.append(tool_message)
             else:
                 error_msg = f'Tool {tool_name} not found'
                 
@@ -336,35 +366,28 @@ def process_tool_calls(
                     except Exception:
                         pass
                 
-                messages.append({
+                # Add error result back to messages
+                tool_message = {
                     'role': 'tool',
                     'content': error_msg,
-                    'tool_name': tool_name
-                })
+                }
+                if tool_call.id:
+                    tool_message['tool_call_id'] = tool_call.id
+                messages.append(tool_message)
         
         # Get model's final response
         if before_chat_callback:
             before_chat_callback()
         
-        # Get Ollama tool dictionaries (with structured parameters)
-        ollama_tools = get_ollama_tools()
+        # Convert tools to provider-specific format
+        converted_tools = provider.convert_tools(tool_dicts, available_functions)
         
         try:
-            # Try using tool dictionaries first (if Ollama supports it)
-            # If not supported, fall back to function objects
-            try:
-                response = client.chat(
-                    model=model,
-                    messages=messages,
-                    tools=ollama_tools,
-                )
-            except (TypeError, ValueError) as e:
-                # Fall back to function objects if dictionaries not supported
-                response = client.chat(
-                    model=model,
-                    messages=messages,
-                    tools=list(available_functions.values()),
-                )
+            # Call provider's chat method
+            response = provider.chat(
+                messages=messages,
+                tools=converted_tools if converted_tools else None,
+            )
         except Exception as e:
             # If error occurs, add error message and break
             messages.append({
@@ -406,11 +429,15 @@ def run_agent(
     Returns:
         Tuple of (response_text or None, updated_message_list)
     """
-    if model is None:
-        config = load_agent_config()
-        model = config['ollama']['model']
+    # Load configuration and create provider
+    config = load_agent_config()
+    provider = create_provider(config)
     
-    client = Client()
+    # Check no_think support
+    if no_think and not provider.supports_no_think():
+        # Warn but continue (no_think will be ignored)
+        pass
+    
     available_functions = get_available_functions()
     
     # Import user_config for language support
@@ -463,7 +490,7 @@ Response Guidelines:
 
 Use the appropriate tools based on user requests. All tool parameters are defined in the tool schemas - use them exactly as specified."""
     
-    if no_think:
+    if no_think and provider.supports_no_think():
         system_prompt += "\n/no_think"
     
     # Build messages: if history messages provided, use them; otherwise create new conversation
@@ -483,25 +510,18 @@ Use the appropriate tools based on user requests. All tool parameters are define
     if before_chat_callback:
         before_chat_callback()
     
-    # Get Ollama tool dictionaries (with structured parameters)
-    ollama_tools = get_ollama_tools()
+    # Get tool dictionaries (with structured parameters)
+    tool_dicts = get_tool_dicts()
+    
+    # Convert tools to provider-specific format
+    converted_tools = provider.convert_tools(tool_dicts, available_functions)
     
     try:
-        # Try using tool dictionaries first (if Ollama supports it)
-        # If not supported, fall back to function objects
-        try:
-            response = client.chat(
-                model=model,
-                messages=messages,
-                tools=ollama_tools,
-            )
-        except (TypeError, ValueError) as e:
-            # Fall back to function objects if dictionaries not supported
-            response = client.chat(
-                model=model,
-                messages=messages,
-                tools=list(available_functions.values()),
-            )
+        # Call provider's chat method
+        response = provider.chat(
+            messages=messages,
+            tools=converted_tools if converted_tools else None,
+        )
     except Exception as e:
         error_msg = f"Error: Failed to call model: {str(e)}"
         if return_text:
@@ -513,13 +533,13 @@ Use the appropriate tools based on user requests. All tool parameters are define
             after_chat_callback()
     
     # Process tool calls
-    if response.message.tool_calls:
+    if response.has_tool_calls():
         final_response, updated_messages = process_tool_calls(
             response,
             messages,
-            client,
+            provider,
             available_functions,
-            model,
+            tool_dicts,
             before_chat_callback=before_chat_callback,
             after_chat_callback=after_chat_callback,
             on_tool_call=on_tool_call,
@@ -527,19 +547,19 @@ Use the appropriate tools based on user requests. All tool parameters are define
         )
         
         # Add final response to message history
-        updated_messages.append(final_response.message.model_dump())
+        updated_messages.append(final_response.model_dump())
         
         if return_text:
-            response_text = final_response.message.content if final_response.message.content else "Task completed successfully."
+            response_text = final_response.content if final_response.content else "Task completed successfully."
             return response_text, updated_messages
         else:
             return None, updated_messages
     else:
         # No tool calls, directly add response to history
-        messages.append(response.message.model_dump())
+        messages.append(response.model_dump())
         
         if return_text:
-            response_text = response.message.content if response.message.content else "I understand."
+            response_text = response.content if response.content else "I understand."
             return response_text, messages
         else:
             return None, messages

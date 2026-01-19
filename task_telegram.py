@@ -64,7 +64,23 @@ from task_telegram_utils import clean_markdownv2_text, dump_conversation_to_file
 # Load configuration
 try:
     _agent_config = task_agent.load_agent_config()
-    _default_model = _agent_config['ollama']['model']
+    # Get provider type and model name
+    if '_provider_type' in _agent_config:
+        provider_type = _agent_config['_provider_type']
+    elif 'provider' in _agent_config and 'type' in _agent_config['provider']:
+        provider_type = _agent_config['provider']['type']
+    else:
+        provider_type = 'ollama'  # Default
+    
+    # Get model name based on provider type
+    if provider_type == 'ollama':
+        _default_model = _agent_config.get('ollama', {}).get('model', 'unknown')
+    elif provider_type == 'openai':
+        _default_model = _agent_config.get('openai', {}).get('model', 'unknown')
+    else:
+        _default_model = 'unknown'
+    
+    _provider_type = provider_type
 except (FileNotFoundError, ValueError, ImportError) as e:
     logger.error(f"Error: {e}")
     sys.exit(1)
@@ -817,7 +833,7 @@ def main():
     warnings.filterwarnings("ignore", category=DeprecationWarning, module="telegram")
     
     logger.info("Starting TaskMCP Telegram Bot...")
-    logger.info(f"Model: {_default_model}")
+    logger.info(f"Provider: {_provider_type}, Model: {_default_model}")
     
     # Create application
     application = Application.builder().token(_bot_token).build()
