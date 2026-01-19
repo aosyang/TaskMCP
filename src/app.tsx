@@ -20,6 +20,7 @@ function App() {
   const [showOutliner, setShowOutliner] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const [stickyOffset, setStickyOffset] = useState(10);
+  const [showManageText, setShowManageText] = useState(true);
 
   // Detect screen size and auto-hide outliner on mobile
   useEffect(() => {
@@ -37,6 +38,31 @@ function App() {
     window.addEventListener('resize', checkScreenSize);
     return () => window.removeEventListener('resize', checkScreenSize);
   }, []);
+
+  // Check if Manage button text should be hidden in compact mode
+  useEffect(() => {
+    const checkManageButtonSpace = () => {
+      const mainContent = document.querySelector('#main-content');
+      if (mainContent) {
+        const buttonContainer = mainContent.querySelector('div[style*="display: flex"]') as HTMLElement;
+        if (buttonContainer) {
+          const containerWidth = buttonContainer.getBoundingClientRect().width;
+          // Hide text if container width is less than 300px (compact mode)
+          setShowManageText(containerWidth >= 300);
+        }
+      }
+    };
+
+    checkManageButtonSpace();
+    window.addEventListener('resize', checkManageButtonSpace);
+    // Also check after a short delay to ensure DOM is ready
+    const timer = setTimeout(checkManageButtonSpace, 100);
+    
+    return () => {
+      window.removeEventListener('resize', checkManageButtonSpace);
+      clearTimeout(timer);
+    };
+  }, [tasks, workspaces]);
 
   const loadWorkspaces = async () => {
     const response = await fetch('/api/workspaces');
@@ -450,9 +476,9 @@ function App() {
             />
           </div>
           <div id="main-content" style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-            <h1 style={{ textWrap: 'balance' }}>📝 Task List</h1>
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <div style={{ display: isMobile ? 'block' : 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '10px' }}>
+            <h1 style={{ textWrap: 'balance', marginBottom: isMobile ? '10px' : '0' }}>📝 Task List</h1>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', width: isMobile ? '100%' : 'auto', flexShrink: 0 }}>
               <button 
                 onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
                 onKeyDown={(e) => {
@@ -464,6 +490,7 @@ function App() {
                 className="theme-toggle"
                 aria-label={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
                 title={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
+                style={{ flexShrink: 0 }}
               >
                 {theme === 'light' ? '🌙' : '☀️'}
               </button>
@@ -479,7 +506,9 @@ function App() {
                   background: 'var(--bg-secondary)',
                   color: 'var(--text-primary)',
                   cursor: 'pointer',
-                  minHeight: '44px'
+                  minHeight: '44px',
+                  flex: '1 1 0',
+                  minWidth: 0
                 }}
               >
                 {workspaces.map(ws => (
@@ -505,10 +534,12 @@ function App() {
                   borderRadius: '4px',
                   color: 'var(--text-primary)',
                   minHeight: '44px',
-                  minWidth: '44px'
+                  minWidth: '44px',
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap'
                 }}
               >
-                ⚙️ Manage
+                ⚙️ {showManageText && ' Manage'}
               </button>
             </div>
           </div>
