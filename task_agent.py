@@ -462,6 +462,8 @@ def run_agent(
         return_text: If True, returns (response_text, messages); if False, returns (None, messages) for CLI compatibility
         before_chat_callback: Optional callback to call before each chat request
         after_chat_callback: Optional callback to call after each chat request
+        on_tool_call: Optional callback to call before a tool is invoked (tool_name, args)
+        on_tool_call_after: Optional callback to call after a tool is invoked (tool_name, args, result)
         language: Language code (e.g., 'zh', 'en'). If None, defaults to None (no language restriction) or user's configured language preference.
     
     Returns:
