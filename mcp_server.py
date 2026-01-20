@@ -747,5 +747,64 @@ def find_dangling_tasks() -> str:
     
     return "\n".join(result)
 
+@mcp.tool()
+def fix_dangling_tasks() -> str:
+    """Fix dangling tasks by converting them to root (top-level) tasks
+    
+    Dangling tasks are tasks that reference a parent_id that doesn't exist.
+    This function will set their parent_id to NULL and adjust their positions.
+    """
+    workspace = get_current_workspace()
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Get all tasks with parent_id
+    cursor.execute("SELECT id, task, parent_id, position FROM tasks WHERE parent_id IS NOT NULL")
+    tasks_with_parents = cursor.fetchall()
+    
+    # Get all valid task IDs
+    cursor.execute("SELECT id FROM tasks")
+    valid_ids = {row["id"] for row in cursor.fetchall()}
+    
+    # Find dangling tasks
+    dangling = []
+    for task in tasks_with_parents:
+        if task["parent_id"] not in valid_ids:
+            dangling.append({
+                "id": task["id"],
+                "task": task["task"],
+                "invalid_parent_id": task["parent_id"],
+                "position": task["position"]
+            })
+    
+    if not dangling:
+        conn.close()
+        return f"No dangling tasks found in workspace '{workspace}'"
+    
+    # Get max position for top-level tasks
+    cursor.execute("SELECT COALESCE(MAX(position), -1) FROM tasks WHERE parent_id IS NULL")
+    max_position = cursor.fetchone()[0]
+    
+    # Fix each dangling task: set parent_id to NULL and update position
+    fixed_count = 0
+    for task in dangling:
+        new_position = max_position + 1 + fixed_count
+        cursor.execute(
+            "UPDATE tasks SET parent_id = NULL, position = ? WHERE id = ?",
+            (new_position, task["id"])
+        )
+        fixed_count += 1
+    
+    conn.commit()
+    conn.close()
+    
+    notify_tasks_updated()
+    
+    result = [f"Fixed {fixed_count} dangling task(s) in workspace '{workspace}':\n"]
+    for task in dangling:
+        result.append(f"  - Task #{task['id']}: {task['task'][:50]}... (was parent_id={task['invalid_parent_id']}, now top-level)")
+    
+    return "\n".join(result)
+
 if __name__ == "__main__":
     mcp.run(transport="http")
