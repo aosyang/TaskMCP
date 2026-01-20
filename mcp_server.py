@@ -663,15 +663,19 @@ def move_task_after(task_id: int, after_task_id: int) -> str:
     return f"Moved task #{task_id} to position {new_position} after task #{after_task_id} as {parent_desc}"
 
 @mcp.tool()
-def move_task(task_id: int, position: int) -> str:
-    """Move a task to a specific position within its current parent
+def reorder_task(task_id: int, position: int) -> str:
+    """Reorder a task to a specific position within its current parent
+    
+    Reorders a task within the same parent without changing its parent relationship.
+    The task will be moved to the specified position (0-based) among its siblings.
     
     Args:
-        task_id: The ID of the task to move
+        task_id: The ID of the task to reorder
         position: Specific position (0 for first) to reorder within same parent
     
     Examples:
-        - move_task(5, 0) - "move task 5 to first position (in current parent)"
+        - reorder_task(5, 0) - "reorder task 5 to first position (in current parent)"
+        - reorder_task(3, 2) - "reorder task 3 to position 2 (in current parent)"
     """
     task_id = _convert_to_int(task_id)
     position = _convert_to_int(position)
@@ -691,6 +695,57 @@ def move_task(task_id: int, position: int) -> str:
     # Move within same parent to specific position
     new_parent_id = old_parent_id
     new_position = position
+    
+    # Shift positions in old location (close the gap)
+    new_position = _shift_positions_for_move(cursor, old_parent_id, old_position, new_parent_id, new_position)
+    
+    # Update the moved task
+    _update_task_position(cursor, task_id, new_parent_id, new_position)
+    
+    return _finalize_move(conn, task_id, new_position, new_parent_id)
+
+@mcp.tool()
+def move_task_to_root(task_id: int) -> str:
+    """Move a task to root level (make it a top-level task)
+    
+    Moves a task from being a child of another task to being a root-level task.
+    The task will be placed at the end of all root-level tasks.
+    
+    Args:
+        task_id: The ID of the task to move to root level
+    
+    Examples:
+        - move_task_to_root(17) - "move task 17 to root level"
+        - move_task_to_root(5) - "make task 5 a top-level task"
+    
+    Returns:
+        Success message with new position, or error message if task not found
+    """
+    task_id = _convert_to_int(task_id)
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Get the task being moved
+    task = _get_task_info(cursor, task_id)
+    if not task:
+        conn.close()
+        return f"Error: Task #{task_id} not found"
+    
+    old_parent_id = task["parent_id"]
+    old_position = task["position"]
+    
+    # Check if already at root level
+    if old_parent_id is None:
+        conn.close()
+        return f"Task #{task_id} is already at root level"
+    
+    # Move to root level
+    new_parent_id = None
+    
+    # Get position for root level tasks
+    cursor.execute("SELECT COALESCE(MAX(position), -1) + 1 FROM tasks WHERE parent_id IS NULL")
+    new_position = cursor.fetchone()[0]
     
     # Shift positions in old location (close the gap)
     new_position = _shift_positions_for_move(cursor, old_parent_id, old_position, new_parent_id, new_position)

@@ -275,7 +275,8 @@ def get_available_functions() -> Dict[str, Callable]:
         'get_current_task': extract_function(mcp_server.get_current_task),
         'move_task_as_child': extract_function(mcp_server.move_task_as_child),
         'move_task_after': extract_function(mcp_server.move_task_after),
-        'move_task': extract_function(mcp_server.move_task),
+        'move_task_to_root': extract_function(mcp_server.move_task_to_root),
+        'reorder_task': extract_function(mcp_server.reorder_task),
         'find_dangling_tasks': extract_function(mcp_server.find_dangling_tasks),
         
         # Time/Date utilities
