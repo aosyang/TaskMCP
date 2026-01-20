@@ -29,9 +29,11 @@ interface TaskItemProps {
   onFocusTask: (id: number) => void;
   commentsExpanded?: 'all' | 'none' | 'default';
   includeCompletedInExpand?: boolean;
+  collapsedTaskIds: Set<number>;
+  onToggleCollapse: (id: number) => void;
 }
 
-function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReorder, onSetCurrent, onFocusTask, commentsExpanded = 'default', includeCompletedInExpand = true }: TaskItemProps) {
+function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReorder, onSetCurrent, onFocusTask, commentsExpanded = 'default', includeCompletedInExpand = true, collapsedTaskIds, onToggleCollapse }: TaskItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(task.task);
   const [showAddChild, setShowAddChild] = useState(false);
@@ -44,7 +46,7 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
   });
   const [commentsText, setCommentsText] = useState(task.comments || '');
   const [isEditingComments, setIsEditingComments] = useState(false);
-  const [childrenFolded, setChildrenFolded] = useState(false);
+  const childrenFolded = collapsedTaskIds.has(task.id);
   const [isHovering, setIsHovering] = useState(false);
   const [isHoveringTitle, setIsHoveringTitle] = useState(false);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
@@ -260,11 +262,11 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
           </span>
           {localChildren.length > 0 ? (
             <button
-              onClick={() => setChildrenFolded(!childrenFolded)}
+              onClick={() => onToggleCollapse(task.id)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
-                  setChildrenFolded(!childrenFolded);
+                  onToggleCollapse(task.id);
                 }
               }}
               aria-label={childrenFolded ? "Expand children" : "Collapse children"}
@@ -662,6 +664,8 @@ function SortableTaskItem({ task, onToggle, onEdit, onDelete, onAddChild, onReor
                     onFocusTask={onFocusTask}
                     commentsExpanded={commentsExpanded}
                     includeCompletedInExpand={includeCompletedInExpand}
+                    collapsedTaskIds={collapsedTaskIds}
+                    onToggleCollapse={onToggleCollapse}
                   />
                 ))}
               </SortableContext>
@@ -686,6 +690,8 @@ interface ListViewProps {
   focusedTaskId: number | null;
   handleUnfocus: () => void;
   findTaskById: (tasks: Task[], id: number) => Task | null;
+  collapsedTaskIds: Set<number>;
+  onToggleCollapse: (id: number) => void;
 }
 
 export function ListView({ 
@@ -701,7 +707,9 @@ export function ListView({
   scrollToCurrentTask,
   focusedTaskId,
   handleUnfocus,
-  findTaskById
+  findTaskById,
+  collapsedTaskIds,
+  onToggleCollapse
 }: ListViewProps) {
   const [hideCompleted, setHideCompleted] = useState(false);
   const [commentsExpanded, setCommentsExpanded] = useState<'all' | 'none' | 'default'>('default');
@@ -876,6 +884,8 @@ export function ListView({
                 onFocusTask={onFocusTask}
                 commentsExpanded={commentsExpanded}
                 includeCompletedInExpand={includeCompletedInExpand}
+                collapsedTaskIds={collapsedTaskIds}
+                onToggleCollapse={onToggleCollapse}
               />
             ))}
           </div>

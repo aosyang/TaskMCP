@@ -5,27 +5,16 @@ interface OutlinerProps {
   tasks: Task[];
   onScrollToTask: (id: number) => void;
   findCurrentTask: (tasks: Task[]) => Task | null;
+  collapsedTaskIds: Set<number>;
+  onToggleCollapse: (id: number) => void;
 }
 
-export function Outliner({ tasks, onScrollToTask, findCurrentTask }: OutlinerProps) {
-  const [collapsedNodes, setCollapsedNodes] = useState<Set<number>>(new Set());
-
-  const toggleCollapse = (id: number) => {
-    setCollapsedNodes(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
+export function Outliner({ tasks, onScrollToTask, findCurrentTask, collapsedTaskIds, onToggleCollapse }: OutlinerProps) {
 
   const currentTask = findCurrentTask(tasks);
 
   const renderOutlineItem = (task: Task, depth: number = 0) => {
-    const isCollapsed = collapsedNodes.has(task.id);
+    const isCollapsed = collapsedTaskIds.has(task.id);
     const hasChildren = task.children.length > 0;
     const isCurrent = currentTask?.id === task.id;
 
@@ -62,13 +51,13 @@ export function Outliner({ tasks, onScrollToTask, findCurrentTask }: OutlinerPro
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                toggleCollapse(task.id);
+                onToggleCollapse(task.id);
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
                   e.stopPropagation();
-                  toggleCollapse(task.id);
+                  onToggleCollapse(task.id);
                 }
               }}
               aria-label={isCollapsed ? `Expand ${task.task}` : `Collapse ${task.task}`}

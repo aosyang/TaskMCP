@@ -27,6 +27,7 @@ function App() {
   const [toastFadingOut, setToastFadingOut] = useState(false);
   const [toastTopOffset, setToastTopOffset] = useState(20);
   const [toastMessage, setToastMessage] = useState('Task added');
+  const [collapsedTaskIds, setCollapsedTaskIds] = useState<Set<number>>(new Set());
 
   // Detect screen size and auto-hide outliner on mobile
   useEffect(() => {
@@ -563,6 +564,18 @@ function App() {
               tasks={getFilteredTasks()} 
               onScrollToTask={scrollToTask} 
               findCurrentTask={findCurrentTask}
+              collapsedTaskIds={collapsedTaskIds}
+              onToggleCollapse={(id: number) => {
+                setCollapsedTaskIds(prev => {
+                  const next = new Set(prev);
+                  if (next.has(id)) {
+                    next.delete(id);
+                  } else {
+                    next.add(id);
+                  }
+                  return next;
+                });
+              }}
             />
           </div>
           <div id="main-content" style={{ flex: 1, minWidth: 0 }}>
@@ -826,6 +839,18 @@ function App() {
             focusedTaskId={focusedTaskId}
             handleUnfocus={handleUnfocus}
             findTaskById={findTaskById}
+            collapsedTaskIds={collapsedTaskIds}
+            onToggleCollapse={(id: number) => {
+              setCollapsedTaskIds(prev => {
+                const next = new Set(prev);
+                if (next.has(id)) {
+                  next.delete(id);
+                } else {
+                  next.add(id);
+                }
+                return next;
+              });
+            }}
           />
           </div>
     </div>
