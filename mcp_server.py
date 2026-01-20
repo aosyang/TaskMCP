@@ -168,7 +168,7 @@ def list_tasks() -> str:
                 indent = "  " * level
                 status = "[x]" if task["done"] else "[ ]"
                 comments = f" [{task['comments']}]" if task["comments"] else ""
-                result.append(f"{indent}{status} {task['task']}{comments}")
+                result.append(f"{indent}{status} #{task['id']} {task['task']}{comments}")
                 # Recursively add children
                 result.extend(format_tasks(task["id"], level + 1))
         return result
