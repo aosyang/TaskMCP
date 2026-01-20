@@ -77,6 +77,8 @@ try:
         _default_model = _agent_config.get('ollama', {}).get('model', 'unknown')
     elif provider_type == 'openai':
         _default_model = _agent_config.get('openai', {}).get('model', 'unknown')
+    elif provider_type == 'lm_studio':
+        _default_model = _agent_config.get('lm_studio', {}).get('model', 'unknown')
     else:
         _default_model = 'unknown'
     

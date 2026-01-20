@@ -92,9 +92,18 @@ def load_agent_config():
             raise ValueError(
                 f"Configuration file '{config_file}' must specify 'model' in [openai] section."
             )
+    elif provider_type == 'lm_studio':
+        if 'lm_studio' not in config:
+            raise ValueError(
+                f"Configuration file '{config_file}' must contain [lm_studio] section when provider type is 'lm_studio'."
+            )
+        if 'model' not in config['lm_studio'] or not config['lm_studio']['model']:
+            raise ValueError(
+                f"Configuration file '{config_file}' must specify 'model' in [lm_studio] section."
+            )
     else:
         raise ValueError(
-            f"Unsupported provider type '{provider_type}'. Supported types: 'ollama', 'openai'"
+            f"Unsupported provider type '{provider_type}'. Supported types: 'ollama', 'openai', 'lm_studio'"
         )
     
     # Store provider type in config for easy access

@@ -37,10 +37,12 @@ def create_provider(config: Dict[str, Any]) -> ModelProvider:
         return _create_ollama_provider(config)
     elif provider_type == 'openai':
         return _create_openai_provider(config)
+    elif provider_type == 'lm_studio':
+        return _create_lm_studio_provider(config)
     else:
         raise ValueError(
             f"Unsupported provider type '{provider_type}'. "
-            "Supported types: 'ollama', 'openai'"
+            "Supported types: 'ollama', 'openai', 'lm_studio'"
         )
 
 
@@ -81,3 +83,21 @@ def _create_openai_provider(config: Dict[str, Any]) -> ModelProvider:
     base_url = openai_config.get('base_url', 'https://api.openai.com/v1')
     
     return OpenAIProvider(model=model, api_key=api_key, base_url=base_url)
+
+
+def _create_lm_studio_provider(config: Dict[str, Any]) -> ModelProvider:
+    """Create LM Studio provider instance"""
+    from .lm_studio_provider import LMStudioProvider
+    
+    lm_studio_config = config.get('lm_studio', {})
+    model = lm_studio_config.get('model')
+    
+    if not model:
+        raise ValueError("LM Studio model must be specified in [lm_studio] section")
+    
+    # Optional configuration
+    base_url = lm_studio_config.get('base_url', 'http://localhost:1234/v1')
+    # API key is optional (LM Studio defaults to no API key required)
+    api_key = os.getenv('LM_STUDIO_API_KEY') or lm_studio_config.get('api_key')
+    
+    return LMStudioProvider(model=model, base_url=base_url, api_key=api_key)
