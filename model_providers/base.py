@@ -44,7 +44,6 @@ class ModelProvider(ABC):
         Returns:
             ModelResponse: 统一的响应对象
         """
-        pass
     
     @abstractmethod
     def convert_tools(
@@ -65,7 +64,6 @@ class ModelProvider(ABC):
         Returns:
             转换后的工具列表，格式由具体提供者决定
         """
-        pass
     
     def supports_no_think(self) -> bool:
         """检查提供者是否支持 no_think 模式

@@ -3,7 +3,6 @@ from flask_socketio import SocketIO
 import threading
 import sys
 import os
-import json
 
 try:
     import tomllib  # Python 3.11+

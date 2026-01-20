@@ -6,7 +6,6 @@ OpenAI 模型提供者实现
 实现 OpenAI API 的 ModelProvider 接口，支持工具调用功能。
 """
 
-import os
 import json
 from typing import List, Dict, Any, Optional, Callable
 from .base import ModelProvider

@@ -7,7 +7,7 @@
 """
 
 import os
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from .base import ModelProvider
 
 

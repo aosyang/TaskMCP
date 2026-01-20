@@ -8,7 +8,6 @@ using various model providers (Ollama, OpenAI, etc.) with tool calling capabilit
 """
 
 import os
-import sys
 import inspect
 from typing import Dict, Callable, Optional, Tuple, Any
 from datetime import datetime
@@ -27,6 +26,15 @@ from model_providers import create_provider, ModelProvider, ModelResponse
 
 # Import all tool functions from MCP server
 import mcp_server
+
+# Import tool registry system (optional - for new tool registration)
+try:
+    from tool_registry import get_registry
+    # Import tools module to trigger auto-registration of all tools
+    import tools  # This triggers initialize_tools() which registers all tools
+    TOOL_REGISTRY_AVAILABLE = True
+except ImportError:
+    TOOL_REGISTRY_AVAILABLE = False
 
 
 def load_agent_config():
@@ -130,6 +138,16 @@ def get_tool_dicts() -> list:
     Returns:
         List of tool dictionaries in standard format (compatible with Ollama and OpenAI)
     """
+    # Use tool registry if available (new architecture)
+    if TOOL_REGISTRY_AVAILABLE:
+        try:
+            registry = get_registry()
+            return registry.get_tool_dicts()
+        except Exception:
+            # Fallback to old method if registry fails
+            pass
+    
+    # Fallback to old method (backward compatibility)
     tools = []
     
     # Get FastMCP tools
@@ -222,6 +240,16 @@ def get_available_functions() -> Dict[str, Callable]:
     Returns:
         Dictionary mapping function names to callable functions
     """
+    # Use tool registry if available (new architecture)
+    if TOOL_REGISTRY_AVAILABLE:
+        try:
+            registry = get_registry()
+            return registry.get_available_functions()
+        except Exception:
+            # Fallback to old method if registry fails
+            pass
+    
+    # Fallback to old method (backward compatibility)
     return {
         # Workspace management
         'get_current_workspace_name': extract_function(mcp_server.get_current_workspace_name),

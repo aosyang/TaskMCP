@@ -1,6 +1,4 @@
-import sqlite3
 import os
-from typing import Optional
 from fastmcp import FastMCP
 from notify import notify_tasks_updated, notify_workspace_changed
 from workspace_manager import (

@@ -835,6 +835,59 @@ def main():
     logger.info("Starting TaskMCP Telegram Bot...")
     logger.info(f"Provider: {_provider_type}, Model: {_default_model}")
     
+    # Log registered tools
+    try:
+        tool_dicts = task_agent.get_tool_dicts()
+        available_functions = task_agent.get_available_functions()
+        
+        logger.info("=" * 60)
+        logger.info("Registered Tools:")
+        logger.info("=" * 60)
+        logger.info(f"Total tools: {len(tool_dicts)}")
+        logger.info("")
+        
+        # Group tools by category if using tool registry
+        try:
+            from tool_registry import get_registry
+            registry = get_registry()
+            categories = registry.get_all_categories()
+            
+            if categories:
+                # Log by category
+                for category in sorted(categories):
+                    tool_names = registry.get_tools_by_category(category)
+                    if tool_names:
+                        logger.info(f"  [{category.upper()}] ({len(tool_names)} tools):")
+                        for tool_name in sorted(tool_names):
+                            logger.info(f"    - {tool_name}")
+                        logger.info("")
+                
+                # Log uncategorized tools
+                all_categorized = set()
+                for category in categories:
+                    all_categorized.update(registry.get_tools_by_category(category))
+                uncategorized = set(available_functions.keys()) - all_categorized
+                if uncategorized:
+                    logger.info(f"  [UNCATEGORIZED] ({len(uncategorized)} tools):")
+                    for tool_name in sorted(uncategorized):
+                        logger.info(f"    - {tool_name}")
+                    logger.info("")
+            else:
+                # No categories, just list all tools
+                for tool_name in sorted(available_functions.keys()):
+                    logger.info(f"  - {tool_name}")
+                logger.info("")
+        except (ImportError, AttributeError):
+            # Fallback: just list all tools
+            logger.info("Tool list:")
+            for tool_name in sorted(available_functions.keys()):
+                logger.info(f"  - {tool_name}")
+            logger.info("")
+        
+        logger.info("=" * 60)
+    except Exception as e:
+        logger.warning(f"Could not log registered tools: {e}")
+    
     # Create application
     application = Application.builder().token(_bot_token).build()
     
