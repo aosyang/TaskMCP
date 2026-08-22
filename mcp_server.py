@@ -73,7 +73,7 @@ class TaskRecord(BaseModel):
 
 class WorkspaceSummary(BaseModel):
     name: str
-    task_count: int
+    task_count: int | None
     current: bool
 
 
@@ -81,9 +81,15 @@ class WorkspaceNameResult(BaseModel):
     workspace: str
 
 
+class WorkspaceIssue(BaseModel):
+    workspace_name: str
+    code: str
+
+
 class WorkspaceListResult(BaseModel):
     current_workspace: str
     workspaces: list[WorkspaceSummary]
+    issues: list[WorkspaceIssue]
 
 
 class WorkspaceCreatedResult(BaseModel):
@@ -151,16 +157,11 @@ class CrossWorkspaceTaskRecord(TaskRecord):
     workspace_name: str
 
 
-class WorkspaceSearchIssue(BaseModel):
-    workspace_name: str
-    code: str
-
-
 class CrossWorkspaceSearchResult(BaseModel):
     query: str
     count: int
     tasks: list[CrossWorkspaceTaskRecord]
-    issues: list[WorkspaceSearchIssue]
+    issues: list[WorkspaceIssue]
 
 
 class CurrentTaskResult(BaseModel):
@@ -218,16 +219,21 @@ def get_current_workspace_name() -> WorkspaceNameResult:
 )
 def list_all_workspaces() -> WorkspaceListResult:
     workspaces = []
+    issues = []
     current = get_current_workspace()
     for name in list_workspaces():
+        conn = None
+        count = None
         try:
             conn = get_db(name)
             count = int(conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0])
-            conn.close()
         except Exception:
-            count = 0
+            issues.append(WorkspaceIssue(workspace_name=name, code="WORKSPACE_READ_FAILED"))
+        finally:
+            if conn is not None:
+                conn.close()
         workspaces.append(WorkspaceSummary(name=name, task_count=count, current=name == current))
-    return WorkspaceListResult(current_workspace=current, workspaces=workspaces)
+    return WorkspaceListResult(current_workspace=current, workspaces=workspaces, issues=issues)
 
 @mcp.tool(
     description="Switch to an existing workspace. This never creates a workspace; call create_workspace explicitly when needed.",
@@ -354,7 +360,29 @@ def add_task_with_parent(task: str, parent_id: int) -> TaskCreatedResult:
     return _add_task_impl(task, parent_id)
 
 def _update_task_fields(task_id: int, task: str | None = None, comments: str | None = None) -> TaskUpdatedResult:
-    return _update_task_fields(task_id, task=task, comments=comments)
+    task_id = int(task_id)
+    if task is None and comments is None:
+        raise ToolError("INVALID_ARGUMENT: provide task and/or comments")
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        if cursor.execute("SELECT id FROM tasks WHERE id = ?", (task_id,)).fetchone() is None:
+            raise ToolError(f"TASK_NOT_FOUND: Task #{task_id} does not exist")
+        updates, params = [], []
+        if task is not None:
+            updates.append("task = ?")
+            params.append(task)
+        if comments is not None:
+            updates.append("comments = ?")
+            params.append(comments)
+        params.append(task_id)
+        cursor.execute(f"UPDATE tasks SET {', '.join(updates)} WHERE id = ?", params)
+        conn.commit()
+        row = cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    finally:
+        conn.close()
+    notify_tasks_updated()
+    return TaskUpdatedResult(workspace=get_current_workspace(), task=_task_to_record(row), updated=True)
 
 
 @mcp.tool(
@@ -362,28 +390,7 @@ def _update_task_fields(task_id: int, task: str | None = None, comments: str | N
     annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
 )
 def update_task(task_id: int, task: str | None = None, comments: str | None = None) -> TaskUpdatedResult:
-    task_id = int(task_id)
-    if task is None and comments is None:
-        raise ToolError("INVALID_ARGUMENT: provide task and/or comments")
-    conn = get_db()
-    cursor = conn.cursor()
-    if cursor.execute("SELECT id FROM tasks WHERE id = ?", (task_id,)).fetchone() is None:
-        conn.close()
-        raise ToolError(f"TASK_NOT_FOUND: Task #{task_id} does not exist")
-    updates, params = [], []
-    if task is not None:
-        updates.append("task = ?")
-        params.append(task)
-    if comments is not None:
-        updates.append("comments = ?")
-        params.append(comments)
-    params.append(task_id)
-    cursor.execute(f"UPDATE tasks SET {', '.join(updates)} WHERE id = ?", params)
-    conn.commit()
-    row = cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
-    conn.close()
-    notify_tasks_updated()
-    return TaskUpdatedResult(workspace=get_current_workspace(), task=_task_to_record(row), updated=True)
+    return _update_task_fields(task_id, task=task, comments=comments)
 
 @mcp.tool(
     description="Legacy compatibility tool: replace a task's comments with UTF-8 text read synchronously from a local server file. Prefer update_task(comments=...) for agent workflows.",
@@ -495,18 +502,21 @@ def search_tasks_all_workspaces(query: str) -> CrossWorkspaceSearchResult:
     results = []
     issues = []
     for workspace_name in list_workspaces():
+        conn = None
         try:
             conn = get_db(workspace_name)
             rows = conn.execute(
                 "SELECT * FROM tasks WHERE task LIKE ? OR comments LIKE ? ORDER BY position, id",
                 (f"%{query}%", f"%{query}%"),
             ).fetchall()
-            conn.close()
             for row in rows:
                 record = _task_to_record(row)
                 results.append(CrossWorkspaceTaskRecord(workspace_name=workspace_name, **record.model_dump()))
         except Exception:
-            issues.append(WorkspaceSearchIssue(workspace_name=workspace_name, code="WORKSPACE_READ_FAILED"))
+            issues.append(WorkspaceIssue(workspace_name=workspace_name, code="WORKSPACE_READ_FAILED"))
+        finally:
+            if conn is not None:
+                conn.close()
     return CrossWorkspaceSearchResult(query=query, count=len(results), tasks=results, issues=issues)
 
 @mcp.tool(
