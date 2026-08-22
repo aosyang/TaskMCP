@@ -306,3 +306,9 @@ TaskMCP exposes a Streamable HTTP MCP endpoint at `http://localhost:8000/mcp`. U
 Core MCP tools return structured objects instead of presentation-oriented strings. Tool annotations communicate read-only, destructive, and idempotent behavior to MCP clients. `set_task_status(task_id, done)` is the preferred completion API because it is idempotent; `toggle_task` remains only as a compatibility alias. `switch_workspace` only switches to an existing workspace and never creates one implicitly.
 
 For agent workflows, inspect the current workspace when uncertain, use `search_tasks` when a task ID is unknown, and use explicit setters for retry-safe mutations.
+
+### MCP contract guarantees
+
+All exposed MCP tools publish typed output schemas and MCP tool annotations. Normal results are structured objects; expected business failures use stable `ToolError` codes. Movement operations reject hierarchy cycles and use deterministic sibling positions. Cross-workspace search returns an `issues` array when any workspace could not be read rather than silently dropping results.
+
+`tests/test_mcp_contract.py` verifies every exposed tool has a description, annotations, and a structured output schema. `tests/test_tool_registry_schema.py` verifies the provider-side tool registry preserves unions, collections, and literals through Pydantic-backed JSON Schema generation. `tests/test_mcp_http_e2e.py` is an opt-in real-endpoint test; run it with `TASKMCP_HTTP_E2E=1` while the server is running.

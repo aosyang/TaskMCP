@@ -9,8 +9,10 @@ and the system automatically generates tool definitions from function signatures
 """
 
 import inspect
-from typing import Dict, Callable, Optional, List
+import json
+from typing import Dict, Callable, Optional, List, get_type_hints
 from dataclasses import dataclass
+from pydantic import TypeAdapter
 
 
 @dataclass
@@ -124,92 +126,63 @@ class ToolRegistry:
             self._categories[category].append(name)
     
     def _generate_parameters(self, func: Callable) -> dict:
-        """Auto-generate parameters schema from function signature
-        
-        Args:
-            func: Function to analyze
-        
-        Returns:
-            Parameters schema in OpenAI format
+        """Generate JSON Schema from Python annotations using Pydantic.
+
+        Unions, Optional, Literal, collections, dataclasses, and Pydantic models
+        remain machine-readable instead of degrading unknown annotations to strings.
         """
         sig = inspect.signature(func)
+        try:
+            hints = get_type_hints(func, include_extras=True)
+        except Exception:
+            hints = {}
         properties = {}
         required = []
-        
         for param_name, param in sig.parameters.items():
-            # Skip 'self' parameter
             if param_name == 'self':
                 continue
-            
-            # Determine parameter type
-            param_type = self._get_parameter_type(param)
-            
-            param_schema = {"type": param_type}
-            
-            # Check for default value
-            if param.default != inspect.Parameter.empty:
-                param_schema["default"] = param.default
+            annotation = hints.get(param_name, param.annotation)
+            if annotation is inspect.Parameter.empty:
+                param_schema = self._schema_from_default(param.default)
             else:
+                try:
+                    param_schema = TypeAdapter(annotation).json_schema()
+                except Exception:
+                    param_schema = self._schema_from_default(param.default)
+            if param.default == inspect.Parameter.empty:
                 required.append(param_name)
-            
-            # Add description from annotation if available
-            if param.annotation != inspect.Parameter.empty:
-                if param.annotation != inspect.Signature.empty:
-                    # Try to extract type hint info
+            else:
+                try:
+                    json.dumps(param.default)
+                    param_schema = dict(param_schema)
+                    param_schema['default'] = param.default
+                except (TypeError, ValueError):
                     pass
-            
             properties[param_name] = param_schema
-        
-        return {
-            "type": "object",
-            "properties": properties,
-            "required": required
-        }
+        return {'type': 'object', 'properties': properties, 'required': required}
+
+    @staticmethod
+    def _schema_from_default(default) -> dict:
+        if default is inspect.Parameter.empty:
+            return {}
+        if default is None:
+            return {'type': 'null'}
+        mapping = {str: 'string', int: 'integer', float: 'number', bool: 'boolean', list: 'array', dict: 'object'}
+        json_type = mapping.get(type(default))
+        return {'type': json_type} if json_type else {}
     
     def _get_parameter_type(self, param: inspect.Parameter) -> str:
-        """Get JSON schema type from parameter annotation
-        
-        Args:
-            param: Parameter to analyze
-        
-        Returns:
-            JSON schema type string
-        """
+        """Backward-compatible simple type helper; full schemas use Pydantic."""
         annotation = param.annotation
-        
-        # Handle type hints
-        if annotation == inspect.Parameter.empty:
-            # No annotation, try to infer from default value
-            if param.default != inspect.Parameter.empty:
-                default_type = type(param.default)
-                if default_type == int:
-                    return "integer"
-                elif default_type == float:
-                    return "number"
-                elif default_type == bool:
-                    return "boolean"
-                elif default_type == list:
-                    return "array"
-                elif default_type == dict:
-                    return "object"
-            return "string"  # Default to string
-        
-        # Handle type annotations
-        if annotation == int:
-            return "integer"
-        elif annotation == float:
-            return "number"
-        elif annotation == bool:
-            return "boolean"
-        elif annotation == list or annotation == List:
-            return "array"
-        elif annotation == dict or annotation == Dict:
-            return "object"
-        elif annotation == str or annotation == Optional[str]:
-            return "string"
-        else:
-            # For complex types, default to string
-            return "string"
+        if annotation is not inspect.Parameter.empty:
+            try:
+                schema = TypeAdapter(annotation).json_schema()
+                if isinstance(schema.get('type'), str):
+                    return schema['type']
+            except Exception:
+                pass
+        schema = self._schema_from_default(param.default)
+        return schema.get('type', 'string')
     
     def get_tool_dicts(self) -> List[dict]:
         """Get all tools as dictionaries in OpenAI format
