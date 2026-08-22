@@ -2,6 +2,7 @@
 import os
 import json
 import sqlite3
+import time
 
 WORKSPACES_DIR = 'workspaces'
 DEFAULT_WORKSPACE = 'default'
@@ -107,6 +108,28 @@ def init_db(workspace_name):
     ''')
     conn.commit()
     conn.close()
+
+def delete_workspace_db(workspace_name, retries=50, retry_delay=0.1):
+    """Delete a workspace DB with a short bounded retry for transient Windows file locks.
+
+    Concurrent Web/MCP readers may briefly keep SQLite handles open while a workspace
+    switch notification is propagating. Retrying only PermissionError avoids hiding
+    permanent filesystem failures.
+    """
+    db_path = get_workspace_db_path(workspace_name)
+    last_error = None
+    for attempt in range(retries + 1):
+        try:
+            os.remove(db_path)
+            return
+        except PermissionError as exc:
+            last_error = exc
+            if attempt >= retries:
+                raise
+            time.sleep(retry_delay)
+    if last_error:
+        raise last_error
+
 
 def get_db(workspace_name=None):
     """Get database connection for a workspace

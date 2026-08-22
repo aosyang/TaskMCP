@@ -297,3 +297,12 @@ python tests/test_model_providers.py
 # Run integration tests
 python tests/test_provider_integration.py
 ```
+
+
+## Agent-facing MCP contract
+
+TaskMCP exposes a Streamable HTTP MCP endpoint at `http://localhost:8000/mcp`. Use an MCP client for protocol checks rather than treating a bare browser `GET /mcp` as a health check. The Web server exposes `GET /health` for lightweight readiness checks.
+
+Core MCP tools return structured objects instead of presentation-oriented strings. Tool annotations communicate read-only, destructive, and idempotent behavior to MCP clients. `set_task_status(task_id, done)` is the preferred completion API because it is idempotent; `toggle_task` remains only as a compatibility alias. `switch_workspace` only switches to an existing workspace and never creates one implicitly.
+
+For agent workflows, inspect the current workspace when uncertain, use `search_tasks` when a task ID is unknown, and use explicit setters for retry-safe mutations.

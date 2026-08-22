@@ -18,6 +18,7 @@ from workspace_manager import (
     set_current_workspace,
     list_workspaces,
     get_workspace_db_path,
+    delete_workspace_db,
     validate_workspace_name,
     init_db,
     get_db
@@ -48,6 +49,25 @@ def build_tree(tasks, parent_id=None, current_task_id=None):
 @app.route('/')
 def index():
     return render_template('index.html')
+
+
+@app.route('/health')
+def health():
+    """Lightweight readiness endpoint for watchdogs; MCP protocol tests should still use an MCP client."""
+    import socket
+    mcp_ready = False
+    try:
+        with socket.create_connection(('127.0.0.1', 8000), timeout=0.5):
+            mcp_ready = True
+    except OSError:
+        pass
+    return jsonify({
+        'ok': mcp_ready,
+        'service': 'TaskMCP',
+        'web': 'ready',
+        'mcp': 'ready' if mcp_ready else 'unavailable',
+        'workspace': get_current_workspace(),
+    }), (200 if mcp_ready else 503)
 
 @app.route('/api/tasks')
 def get_tasks():
@@ -299,7 +319,7 @@ def delete_workspace():
         return jsonify({'error': 'Workspace not found'}), 404
     
     # Delete the database file
-    os.remove(db_path)
+    delete_workspace_db(workspace_name)
     
     return jsonify({
         'success': True,

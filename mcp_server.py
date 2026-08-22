@@ -1,11 +1,13 @@
 import os
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 from notify import notify_tasks_updated, notify_workspace_changed
 from workspace_manager import (
     get_current_workspace,
     set_current_workspace as set_workspace,
     list_workspaces,
     get_workspace_db_path,
+    delete_workspace_db,
     validate_workspace_name,
     init_db,
     get_db
@@ -15,239 +17,209 @@ from workspace_manager import (
 # Note: FastMCP should handle type coercion by default, but Cursor's MCP client
 # may serialize integers as strings. The function implementations include
 # string-to-int conversion as a fallback.
-mcp = FastMCP("Task Manager")
+mcp = FastMCP(
+    "Task Manager",
+    version="2.0",
+    instructions=(
+        "Task management server with multiple workspaces. "
+        "All task operations are scoped to the current workspace unless explicitly stated otherwise. "
+        "When the target workspace is uncertain, inspect the current workspace before mutating tasks. "
+        "Use search_tasks when a task ID is unknown. Prefer set_task_status over toggle_task. "
+        "switch_workspace never creates a missing workspace; use create_workspace explicitly."
+    ),
+)
 
 def set_current_workspace(workspace_name):
-    """Set current workspace and notify"""
+    """Set current workspace and notify without implicitly creating it."""
     set_workspace(workspace_name)
-    init_db(workspace_name)
     notify_workspace_changed(workspace_name)
 
-# Workspace management tools
-@mcp.tool()
-def get_current_workspace_name() -> str:
-    """Get the name of the current active workspace"""
-    workspace = get_current_workspace()
-    return f"Current workspace: {workspace}"
+def _task_to_dict(task):
+    if task is None:
+        return None
+    return {
+        "id": int(task["id"]),
+        "task": task["task"],
+        "done": bool(task["done"]),
+        "parent_id": task["parent_id"],
+        "position": int(task["position"]),
+        "comments": task["comments"] or "",
+    }
 
-@mcp.tool()
-def list_all_workspaces() -> str:
-    """List all available workspaces"""
-    workspaces = list_workspaces()
+
+def _get_task_record(task_id: int):
+    task_id = int(task_id)
+    conn = get_db()
+    row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    conn.close()
+    if row is None:
+        raise ToolError(f"TASK_NOT_FOUND: Task #{task_id} does not exist in the current workspace")
+    return _task_to_dict(row)
+
+
+# Workspace management tools
+@mcp.tool(
+    description="Return the current active workspace. Read-only; use this before mutations when the target workspace is uncertain.",
+    annotations={"readOnlyHint": True, "openWorldHint": False},
+)
+def get_current_workspace_name() -> dict:
+    return {"workspace": get_current_workspace()}
+
+@mcp.tool(
+    description="List all available workspaces with task counts and identify the current workspace. Read-only.",
+    annotations={"readOnlyHint": True, "openWorldHint": False},
+)
+def list_all_workspaces() -> dict:
+    workspaces = []
     current = get_current_workspace()
-    
-    result = ["Available workspaces:"]
-    for ws in workspaces:
-        # Get task count for this workspace
+    for name in list_workspaces():
         try:
-            conn = get_db(ws)
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM tasks")
-            task_count = cursor.fetchone()[0]
+            conn = get_db(name)
+            count = int(conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0])
             conn.close()
         except Exception:
-            # If database doesn't exist or error, treat as empty
-            task_count = 0
-        
-        # Build markers
-        markers = []
-        if ws == current:
-            markers.append("current")
-        if task_count == 0:
-            markers.append("empty")
-        else:
-            markers.append(f"{task_count} task{'s' if task_count > 1 else ''}")
-        
-        marker_str = f" ({', '.join(markers)})" if markers else ""
-        result.append(f"  - {ws}{marker_str}")
-    
-    return "\n".join(result)
+            count = 0
+        workspaces.append({"name": name, "task_count": count, "current": name == current})
+    return {"current_workspace": current, "workspaces": workspaces}
 
-@mcp.tool()
-def switch_workspace(workspace_name: str) -> str:
-    """Switch to a different workspace
-    
-    Args:
-        workspace_name: The name of the workspace to switch to
-    """
+@mcp.tool(
+    description="Switch to an existing workspace. This never creates a workspace; call create_workspace explicitly when needed.",
+    annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+)
+def switch_workspace(workspace_name: str) -> dict:
     if not validate_workspace_name(workspace_name):
-        return "Error: Invalid workspace name. Use only letters, numbers, underscore, and hyphen"
-    
-    # Check if workspace exists, if not create it
+        raise ToolError("INVALID_WORKSPACE_NAME: Use only letters, numbers, underscore, and hyphen")
     db_path = get_workspace_db_path(workspace_name)
     if not os.path.exists(db_path):
-        init_db(workspace_name)
-    
+        raise ToolError(f"WORKSPACE_NOT_FOUND: Workspace '{workspace_name}' does not exist")
     set_current_workspace(workspace_name)
     notify_tasks_updated()
-    
-    return f"Switched to workspace: {workspace_name}"
+    return {"workspace": workspace_name, "switched": True}
 
-@mcp.tool()
-def create_workspace(workspace_name: str) -> str:
-    """Create a new workspace
-    
-    Args:
-        workspace_name: The name for the new workspace
-    """
+@mcp.tool(
+    description="Create a new workspace without switching to it.",
+    annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False},
+)
+def create_workspace(workspace_name: str) -> dict:
     if not validate_workspace_name(workspace_name):
-        return "Error: Invalid workspace name. Use only letters, numbers, underscore, and hyphen"
-    
+        raise ToolError("INVALID_WORKSPACE_NAME: Use only letters, numbers, underscore, and hyphen")
     db_path = get_workspace_db_path(workspace_name)
     if os.path.exists(db_path):
-        return f"Error: Workspace '{workspace_name}' already exists"
-    
+        raise ToolError(f"WORKSPACE_ALREADY_EXISTS: Workspace '{workspace_name}' already exists")
     init_db(workspace_name)
-    
-    return f"Created workspace: {workspace_name}"
+    return {"workspace": workspace_name, "created": True, "current": workspace_name == get_current_workspace()}
 
-@mcp.tool()
-def delete_workspace(workspace_name: str) -> str:
-    """Delete a workspace
-    
-    Args:
-        workspace_name: The name of the workspace to delete
-    """
+@mcp.tool(
+    description="Delete a non-current workspace database. Destructive operation. A freshly modified Dropbox-synced database may briefly report WORKSPACE_DELETE_BUSY; retry the same call later.",
+    annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": False},
+)
+def delete_workspace(workspace_name: str) -> dict:
     current = get_current_workspace()
     if workspace_name == current:
-        return f"Error: Cannot delete current workspace '{workspace_name}'. Switch to another workspace first"
-    
+        raise ToolError(f"CURRENT_WORKSPACE_DELETE_FORBIDDEN: Switch away from '{workspace_name}' first")
     db_path = get_workspace_db_path(workspace_name)
     if not os.path.exists(db_path):
-        return f"Error: Workspace '{workspace_name}' not found"
-    
-    os.remove(db_path)
-    return f"Deleted workspace: {workspace_name}"
+        raise ToolError(f"WORKSPACE_NOT_FOUND: Workspace '{workspace_name}' does not exist")
+    try:
+        delete_workspace_db(workspace_name)
+    except PermissionError as exc:
+        raise ToolError(
+            f"WORKSPACE_DELETE_BUSY: Workspace '{workspace_name}' is temporarily locked by another process; retry this deletion shortly"
+        ) from exc
+    return {"workspace": workspace_name, "deleted": True}
 
-@mcp.tool()
-def rename_workspace(old_name: str, new_name: str) -> str:
-    """Rename a workspace
-    
-    Args:
-        old_name: Current name of the workspace
-        new_name: New name for the workspace
-    """
+@mcp.tool(
+    description="Rename an existing workspace. If it is current, the current-workspace pointer is updated.",
+    annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False},
+)
+def rename_workspace(old_name: str, new_name: str) -> dict:
     if not validate_workspace_name(new_name):
-        return "Error: Invalid workspace name. Use only letters, numbers, underscore, and hyphen"
-    
+        raise ToolError("INVALID_WORKSPACE_NAME: Use only letters, numbers, underscore, and hyphen")
     old_path = get_workspace_db_path(old_name)
     new_path = get_workspace_db_path(new_name)
-    
     if not os.path.exists(old_path):
-        return f"Error: Workspace '{old_name}' not found"
-    
+        raise ToolError(f"WORKSPACE_NOT_FOUND: Workspace '{old_name}' does not exist")
     if os.path.exists(new_path):
-        return f"Error: Workspace '{new_name}' already exists"
-    
+        raise ToolError(f"WORKSPACE_ALREADY_EXISTS: Workspace '{new_name}' already exists")
     os.rename(old_path, new_path)
-    
-    # Update current workspace if it was renamed
-    if old_name == get_current_workspace():
+    was_current = old_name == get_current_workspace()
+    if was_current:
         set_current_workspace(new_name)
-    
     notify_tasks_updated()
-    
-    return f"Renamed workspace from '{old_name}' to '{new_name}'"
+    return {"old_name": old_name, "new_name": new_name, "renamed": True, "current": was_current}
 
 # Task management tools
-@mcp.tool()
-def list_tasks() -> str:
-    """List all tasks in the current workspace in hierarchical structure"""
+@mcp.tool(
+    description="List canonical task records in the current workspace. Read-only. Each record includes ID, status, parent, position, and comments.",
+    annotations={"readOnlyHint": True, "openWorldHint": False},
+)
+def list_tasks() -> dict:
     workspace = get_current_workspace()
     conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM tasks ORDER BY position")
-    tasks = cursor.fetchall()
+    rows = conn.execute("SELECT * FROM tasks ORDER BY parent_id, position, id").fetchall()
+    current = conn.execute("SELECT task_id FROM current_task WHERE id = 1").fetchone()
     conn.close()
-    
-    # Build hierarchy
-    def format_tasks(parent_id=None, level=0):
-        result = []
-        for task in tasks:
-            if task["parent_id"] == parent_id:
-                indent = "  " * level
-                status = "[x]" if task["done"] else "[ ]"
-                comments = f" [{task['comments']}]" if task["comments"] else ""
-                result.append(f"{indent}{status} #{task['id']} {task['task']}{comments}")
-                # Recursively add children
-                result.extend(format_tasks(task["id"], level + 1))
-        return result
-    
-    result_lines = format_tasks()
-    header = f"Tasks in workspace '{workspace}':\n"
-    return header + "\n".join(result_lines) if result_lines else f"No tasks found in workspace '{workspace}'"
+    tasks = [_task_to_dict(row) for row in rows]
+    return {
+        "workspace": workspace,
+        "count": len(tasks),
+        "current_task_id": current["task_id"] if current else None,
+        "tasks": tasks,
+    }
 
-def _add_task_impl(task: str, parent_id: int | None) -> str:
-    """Internal implementation for adding a task"""
-    # Convert string parameters to int if needed (FastMCP may serialize ints as strings)
+def _add_task_impl(task: str, parent_id: int | None) -> dict:
+    if not task or not task.strip():
+        raise ToolError("INVALID_ARGUMENT: task must be non-empty")
     if parent_id is not None:
-        parent_id = int(parent_id) if isinstance(parent_id, str) else parent_id
-    
+        parent_id = int(parent_id)
     conn = get_db()
     cursor = conn.cursor()
-    
-    # Validate parent_id exists if provided
     if parent_id is not None:
         cursor.execute("SELECT id FROM tasks WHERE id = ?", (parent_id,))
         if cursor.fetchone() is None:
             conn.close()
-            return f"Error: Parent task #{parent_id} does not exist"
-    
-    # Get max position for this parent
+            raise ToolError(f"PARENT_TASK_NOT_FOUND: Parent task #{parent_id} does not exist")
     cursor.execute("SELECT COALESCE(MAX(position), -1) + 1 FROM tasks WHERE parent_id IS ?", (parent_id,))
-    position = cursor.fetchone()[0]
-    
+    position = int(cursor.fetchone()[0])
     cursor.execute(
         "INSERT INTO tasks (task, done, parent_id, position, comments) VALUES (?, 0, ?, ?, '')",
-        (task, parent_id, position)
+        (task, parent_id, position),
     )
+    task_id = int(cursor.lastrowid)
     conn.commit()
-    task_id = cursor.lastrowid
+    row = cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
     conn.close()
-    
     notify_tasks_updated()
-    return f"Added task #{task_id}: {task}"
+    return {"workspace": get_current_workspace(), "task": _task_to_dict(row), "created": True}
 
-@mcp.tool()
-def add_task(task: str) -> str:
-    """Add a new top-level task item to current workspace
-    
-    Args:
-        task: The task description
-    """
-    return _add_task_impl(task, None)
-
-@mcp.tool()
-def add_task_with_parent(task: str, parent_id: int) -> str:
-    """Add a new subtask item to current workspace
-    
-    Args:
-        task: The task description
-        parent_id: Parent task ID to create a subtask
-    """
+@mcp.tool(
+    description="Create a task in the current workspace. Omit parent_id for a top-level task; provide an existing task ID to create a subtask.",
+    annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False},
+)
+def add_task(task: str, parent_id: int | None = None) -> dict:
     return _add_task_impl(task, parent_id)
 
-@mcp.tool()
-def update_task(task_id: int, task: str | None = None, comments: str | None = None) -> str:
-    """Update a task's description or comments
-    
-    Args:
-        task_id: The ID of the task to update
-        task: New task description (optional)
-        comments: New comments (optional, supports markdown: **bold**, *italic*, [links](url), lists, code, etc.)
-    
-    Note:
-        If updating task comments repeatedly fails, try using update_task_comments_from_file
-        to update comments from a text file instead.
-    """
+@mcp.tool(
+    description="Compatibility alias for add_task(task, parent_id). Prefer add_task for new clients.",
+    annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False},
+)
+def add_task_with_parent(task: str, parent_id: int) -> dict:
+    return _add_task_impl(task, parent_id)
+
+@mcp.tool(
+    description="Update the description and/or Markdown comments of an existing task, then return the canonical updated task record.",
+    annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+)
+def update_task(task_id: int, task: str | None = None, comments: str | None = None) -> dict:
+    task_id = int(task_id)
     if task is None and comments is None:
-        return "Error: Must provide task or comments to update"
-    
+        raise ToolError("INVALID_ARGUMENT: provide task and/or comments")
     conn = get_db()
     cursor = conn.cursor()
-    
-    updates = []
-    params = []
+    if cursor.execute("SELECT id FROM tasks WHERE id = ?", (task_id,)).fetchone() is None:
+        conn.close()
+        raise ToolError(f"TASK_NOT_FOUND: Task #{task_id} does not exist")
+    updates, params = [], []
     if task is not None:
         updates.append("task = ?")
         params.append(task)
@@ -255,13 +227,12 @@ def update_task(task_id: int, task: str | None = None, comments: str | None = No
         updates.append("comments = ?")
         params.append(comments)
     params.append(task_id)
-    
     cursor.execute(f"UPDATE tasks SET {', '.join(updates)} WHERE id = ?", params)
     conn.commit()
+    row = cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
     conn.close()
-    
     notify_tasks_updated()
-    return f"Updated task #{task_id}"
+    return {"workspace": get_current_workspace(), "task": _task_to_dict(row), "updated": True}
 
 @mcp.tool()
 def update_task_comments_from_file(task_id: int, file_path: str) -> str:
@@ -309,92 +280,90 @@ def update_task_comments_from_file(task_id: int, file_path: str) -> str:
     notify_tasks_updated()
     return f"Updated task #{task_id} comments from file '{file_path}'"
 
-@mcp.tool()
-def toggle_task(task_id: int) -> str:
-    """Toggle a task's done status
-    
-    Args:
-        task_id: The ID of the task to toggle
-    """
+@mcp.tool(
+    description="Compatibility toggle for task completion. Non-idempotent; prefer set_task_status for agent workflows and retries.",
+    annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False},
+)
+def toggle_task(task_id: int) -> dict:
+    task_id = int(task_id)
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("UPDATE tasks SET done = NOT done WHERE id = ?", (task_id,))
-    cursor.execute("SELECT done FROM tasks WHERE id = ?", (task_id,))
-    done = cursor.fetchone()[0]
+    row = cursor.execute("SELECT done FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    if row is None:
+        conn.close()
+        raise ToolError(f"TASK_NOT_FOUND: Task #{task_id} does not exist")
+    done = not bool(row["done"])
+    cursor.execute("UPDATE tasks SET done = ? WHERE id = ?", (1 if done else 0, task_id))
+    conn.commit()
+    updated = cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    conn.close()
+    notify_tasks_updated()
+    return {"workspace": get_current_workspace(), "task": _task_to_dict(updated), "updated": True}
+
+
+@mcp.tool(
+    description="Set an existing task's completion state explicitly. Safe to retry with the same arguments.",
+    annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+)
+def set_task_status(task_id: int, done: bool) -> dict:
+    task_id = int(task_id)
+    conn = get_db()
+    cursor = conn.cursor()
+    if cursor.execute("SELECT id FROM tasks WHERE id = ?", (task_id,)).fetchone() is None:
+        conn.close()
+        raise ToolError(f"TASK_NOT_FOUND: Task #{task_id} does not exist")
+    cursor.execute("UPDATE tasks SET done = ? WHERE id = ?", (1 if done else 0, task_id))
+    conn.commit()
+    row = cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    conn.close()
+    notify_tasks_updated()
+    return {"workspace": get_current_workspace(), "task": _task_to_dict(row), "updated": True}
+
+@mcp.tool(
+    description="Delete a task and all descendants recursively from the current workspace. Destructive operation.",
+    annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": False},
+)
+def delete_task(task_id: int) -> dict:
+    task_id = int(task_id)
+    conn = get_db()
+    cursor = conn.cursor()
+    if cursor.execute("SELECT id FROM tasks WHERE id = ?", (task_id,)).fetchone() is None:
+        conn.close()
+        raise ToolError(f"TASK_NOT_FOUND: Task #{task_id} does not exist")
+    deleted_ids = []
+    def collect(node_id):
+        children = cursor.execute("SELECT id FROM tasks WHERE parent_id = ?", (node_id,)).fetchall()
+        for child in children:
+            collect(int(child["id"]))
+        deleted_ids.append(int(node_id))
+    collect(task_id)
+    cursor.execute("DELETE FROM current_task WHERE task_id IN (%s)" % ','.join('?' * len(deleted_ids)), deleted_ids)
+    cursor.executemany("DELETE FROM tasks WHERE id = ?", [(i,) for i in deleted_ids])
     conn.commit()
     conn.close()
-    
     notify_tasks_updated()
-    status = "completed" if done else "incomplete"
-    return f"Task #{task_id} marked as {status}"
+    return {"workspace": get_current_workspace(), "deleted": True, "deleted_ids": deleted_ids, "deleted_count": len(deleted_ids)}
 
-@mcp.tool()
-def delete_task(task_id: int) -> str:
-    """Delete a task and all its subtasks
-    
-    Args:
-        task_id: The ID of the task to delete
-    """
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Delete subtasks first
-    cursor.execute("DELETE FROM tasks WHERE parent_id = ?", (task_id,))
-    # Delete the task
-    cursor.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
-    conn.commit()
-    conn.close()
-    
-    notify_tasks_updated()
-    return f"Deleted task #{task_id} and its subtasks"
+@mcp.tool(
+    description="Retrieve one canonical task record by numeric task ID in the current workspace. Read-only.",
+    annotations={"readOnlyHint": True, "openWorldHint": False},
+)
+def get_task(task_id: int) -> dict:
+    return {"workspace": get_current_workspace(), "task": _get_task_record(task_id)}
 
-@mcp.tool()
-def get_task(task_id: int) -> str:
-    """Get details of a specific task
-    
-    Args:
-        task_id: The ID of the task to retrieve
-    """
+@mcp.tool(
+    description="Search task descriptions and comments in the current workspace. Use this when the task ID is unknown. Read-only.",
+    annotations={"readOnlyHint": True, "openWorldHint": False},
+)
+def search_tasks(query: str) -> dict:
     conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
-    task = cursor.fetchone()
+    rows = conn.execute(
+        "SELECT * FROM tasks WHERE task LIKE ? OR comments LIKE ? ORDER BY position, id",
+        (f"%{query}%", f"%{query}%"),
+    ).fetchall()
     conn.close()
-    
-    if not task:
-        return f"Task #{task_id} not found"
-    
-    status = "[x] Done" if task["done"] else "[ ] Incomplete"
-    parent = f"(subtask of #{task['parent_id']})" if task["parent_id"] else "(top-level)"
-    comments = f"\nComments (markdown): {task['comments']}" if task["comments"] else ""
-    
-    return f"Task #{task['id']} {parent}\nStatus: {status}\nTask: {task['task']}{comments}"
-
-@mcp.tool()
-def search_tasks(query: str) -> str:
-    """Search tasks by description or comments
-    
-    Args:
-        query: Search term to find in task description or comments
-    """
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM tasks WHERE task LIKE ? OR comments LIKE ? ORDER BY position",
-        (f"%{query}%", f"%{query}%")
-    )
-    tasks = cursor.fetchall()
-    conn.close()
-    
-    if not tasks:
-        return f"No tasks found matching '{query}'"
-    
-    result = []
-    for task in tasks:
-        status = "[x]" if task["done"] else "[ ]"
-        result.append(f"#{task['id']} {status} {task['task']}")
-    
-    return "\n".join(result)
+    tasks = [_task_to_dict(row) for row in rows]
+    return {"workspace": get_current_workspace(), "query": query, "count": len(tasks), "tasks": tasks}
 
 @mcp.tool()
 def search_tasks_all_workspaces(query: str) -> str:
