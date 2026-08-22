@@ -14,9 +14,11 @@ class TaskMCPContractTests(unittest.TestCase):
                 expected = {
                     "get_current_workspace_name", "list_all_workspaces", "switch_workspace",
                     "create_workspace", "delete_workspace", "rename_workspace", "list_tasks",
-                    "add_task", "add_task_with_parent", "update_task",
+                    "add_task", "add_task_with_parent",
+            "add_tasks", "update_task",
                     "update_task_comments_from_file", "toggle_task", "set_task_status",
-                    "delete_task", "get_task", "search_tasks", "search_tasks_all_workspaces",
+                    "delete_task", "get_task",
+            "get_task_subtree", "search_tasks", "search_tasks_all_workspaces",
                     "set_current_task", "clear_current_task", "get_current_task",
                     "move_task_as_child", "move_task_after", "reorder_task", "move_task_to_root",
                     "find_dangling_tasks", "fix_dangling_tasks",

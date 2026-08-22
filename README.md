@@ -26,11 +26,13 @@ A multi-workspace task management system with hierarchical structure, drag-and-d
 
 **Task Management Tools:**
 - `list_tasks` - List all tasks in current workspace (hierarchical display)
-- `add_task` - Add new task (can specify parent_id for subtasks)
+- `add_task` - Add one task with optional parent and comments in a single call
+- `add_tasks` - Atomically add multiple sibling tasks under one parent (can specify parent_id for subtasks)
 - `update_task` - Update task description or comments
 - `toggle_task` - Toggle completion status
 - `delete_task` - Delete task and all subtasks
 - `get_task` - Get task details
+- `get_task_subtree` - Get one task and all descendants without loading the whole workspace
 - `search_tasks` - Search tasks
 - `move_task` - Move task position
 - `set_current_task` - Set current working task

@@ -43,9 +43,29 @@ def save_workspace_config(config):
         json.dump(config, f, indent=2)
 
 def get_current_workspace():
-    """Get current workspace name"""
+    """Get a valid current workspace name, repairing stale config pointers when needed."""
     config = load_workspace_config()
-    return config.get('current_workspace', DEFAULT_WORKSPACE)
+    current = config.get('current_workspace', DEFAULT_WORKSPACE)
+    ensure_workspaces_dir()
+    current_path = os.path.join(WORKSPACES_DIR, f'{current}.db')
+    if os.path.exists(current_path):
+        return current
+
+    existing = sorted(
+        file[:-3]
+        for file in os.listdir(WORKSPACES_DIR)
+        if file.endswith('.db')
+    )
+    if existing:
+        repaired = existing[0]
+    else:
+        repaired = DEFAULT_WORKSPACE
+        init_db(repaired)
+
+    if current != repaired:
+        config['current_workspace'] = repaired
+        save_workspace_config(config)
+    return repaired
 
 def set_current_workspace(workspace_name):
     """Set current workspace"""

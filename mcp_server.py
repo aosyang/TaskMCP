@@ -128,6 +128,24 @@ class TaskCreatedResult(BaseModel):
     created: bool
 
 
+class TaskCreateInput(BaseModel):
+    task: str
+    comments: str = ""
+
+
+class TasksCreatedResult(BaseModel):
+    workspace: str
+    count: int
+    tasks: list[TaskRecord]
+
+
+class TaskSubtreeResult(BaseModel):
+    workspace: str
+    root_task_id: int
+    count: int
+    tasks: list[TaskRecord]
+
+
 class TaskUpdatedResult(BaseModel):
     workspace: str
     task: TaskRecord
@@ -320,44 +338,91 @@ def list_tasks() -> TaskListResult:
         tasks=tasks,
     )
 
-def _add_task_impl(task: str, parent_id: int | None) -> TaskCreatedResult:
+def _add_task_impl(task: str, parent_id: int | None = None, comments: str = "") -> TaskCreatedResult:
     if not task or not task.strip():
         raise ToolError("INVALID_ARGUMENT: task must be non-empty")
     if parent_id is not None:
         parent_id = int(parent_id)
     conn = get_db()
-    cursor = conn.cursor()
-    if parent_id is not None:
-        cursor.execute("SELECT id FROM tasks WHERE id = ?", (parent_id,))
-        if cursor.fetchone() is None:
-            conn.close()
+    try:
+        cursor = conn.cursor()
+        if parent_id is not None and cursor.execute("SELECT id FROM tasks WHERE id = ?", (parent_id,)).fetchone() is None:
             raise ToolError(f"PARENT_TASK_NOT_FOUND: Parent task #{parent_id} does not exist")
-    cursor.execute("SELECT COALESCE(MAX(position), -1) + 1 FROM tasks WHERE parent_id IS ?", (parent_id,))
-    position = int(cursor.fetchone()[0])
-    cursor.execute(
-        "INSERT INTO tasks (task, done, parent_id, position, comments) VALUES (?, 0, ?, ?, '')",
-        (task, parent_id, position),
-    )
-    task_id = int(cursor.lastrowid)
-    conn.commit()
-    row = cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
-    conn.close()
+        position = int(cursor.execute(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM tasks WHERE parent_id IS ?",
+            (parent_id,),
+        ).fetchone()[0])
+        cursor.execute(
+            "INSERT INTO tasks (task, done, parent_id, position, comments) VALUES (?, 0, ?, ?, ?)",
+            (task, parent_id, position, comments),
+        )
+        task_id = int(cursor.lastrowid)
+        row = cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
     notify_tasks_updated()
     return TaskCreatedResult(workspace=get_current_workspace(), task=_task_to_record(row), created=True)
 
-@mcp.tool(
-    description="Create a task in the current workspace. Omit parent_id for a top-level task; provide an existing task ID to create a subtask.",
-    annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False},
-)
-def add_task(task: str, parent_id: int | None = None) -> TaskCreatedResult:
-    return _add_task_impl(task, parent_id)
 
 @mcp.tool(
-    description="Compatibility alias for add_task(task, parent_id). Prefer add_task for new clients.",
+    description="Create one task in the current workspace. Optionally attach it to an existing parent and store Markdown context/comments in the same call.",
     annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False},
 )
-def add_task_with_parent(task: str, parent_id: int) -> TaskCreatedResult:
-    return _add_task_impl(task, parent_id)
+def add_task(task: str, parent_id: int | None = None, comments: str = "") -> TaskCreatedResult:
+    return _add_task_impl(task, parent_id=parent_id, comments=comments)
+
+
+@mcp.tool(
+    description="Legacy compatibility tool for creating one child task. Prefer add_task(parent_id=...) for new agent workflows.",
+    annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False},
+)
+def add_task_with_parent(task: str, parent_id: int, comments: str = "") -> TaskCreatedResult:
+    return _add_task_impl(task, parent_id=parent_id, comments=comments)
+
+
+@mcp.tool(
+    description="Create multiple sibling tasks atomically under one existing parent (or at the root). Each task may include Markdown comments. This persists an agent-authored plan efficiently without imposing planning policy.",
+    annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False},
+)
+def add_tasks(tasks: list[TaskCreateInput], parent_id: int | None = None) -> TasksCreatedResult:
+    if not tasks:
+        raise ToolError("INVALID_ARGUMENT: tasks must contain at least one task")
+    for index, spec in enumerate(tasks):
+        if not spec.task or not spec.task.strip():
+            raise ToolError(f"INVALID_ARGUMENT: tasks[{index}].task must be non-empty")
+    if parent_id is not None:
+        parent_id = int(parent_id)
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        if parent_id is not None and cursor.execute("SELECT id FROM tasks WHERE id = ?", (parent_id,)).fetchone() is None:
+            raise ToolError(f"PARENT_TASK_NOT_FOUND: Parent task #{parent_id} does not exist")
+        next_position = int(cursor.execute(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM tasks WHERE parent_id IS ?",
+            (parent_id,),
+        ).fetchone()[0])
+        task_ids = []
+        for offset, spec in enumerate(tasks):
+            cursor.execute(
+                "INSERT INTO tasks (task, done, parent_id, position, comments) VALUES (?, 0, ?, ?, ?)",
+                (spec.task, parent_id, next_position + offset, spec.comments),
+            )
+            task_ids.append(int(cursor.lastrowid))
+        rows = [cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone() for task_id in task_ids]
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    notify_tasks_updated()
+    records = [_task_to_record(row) for row in rows]
+    return TasksCreatedResult(workspace=get_current_workspace(), count=len(records), tasks=records)
+
 
 def _update_task_fields(task_id: int, task: str | None = None, comments: str | None = None) -> TaskUpdatedResult:
     task_id = int(task_id)
@@ -479,6 +544,50 @@ def delete_task(task_id: int) -> TaskDeletedResult:
 )
 def get_task(task_id: int) -> TaskResult:
     return TaskResult(workspace=get_current_workspace(), task=_get_task_record(task_id))
+
+@mcp.tool(
+    description="Return one task and all descendants in stable preorder. Use this instead of list_tasks when an agent only needs one local branch of a large hierarchy.",
+    annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+)
+def get_task_subtree(task_id: int) -> TaskSubtreeResult:
+    task_id = int(task_id)
+    conn = get_db()
+    try:
+        rows = conn.execute("SELECT * FROM tasks ORDER BY position, id").fetchall()
+    finally:
+        conn.close()
+    by_id = {int(row["id"]): row for row in rows}
+    root = by_id.get(task_id)
+    if root is None:
+        raise ToolError(f"TASK_NOT_FOUND: Task #{task_id} does not exist")
+    children = {}
+    for row in rows:
+        children.setdefault(row["parent_id"], []).append(row)
+    ordered = []
+    visiting = set()
+    visited = set()
+
+    def walk(row):
+        row_id = int(row["id"])
+        if row_id in visiting:
+            raise ToolError(f"TASK_HIERARCHY_CYCLE: cycle detected at task #{row_id}")
+        if row_id in visited:
+            return
+        visiting.add(row_id)
+        ordered.append(_task_to_record(row))
+        for child in children.get(row_id, []):
+            walk(child)
+        visiting.remove(row_id)
+        visited.add(row_id)
+
+    walk(root)
+    return TaskSubtreeResult(
+        workspace=get_current_workspace(),
+        root_task_id=task_id,
+        count=len(ordered),
+        tasks=ordered,
+    )
+
 
 @mcp.tool(
     description="Search task descriptions and comments in the current workspace. Use this when the task ID is unknown. Read-only.",
