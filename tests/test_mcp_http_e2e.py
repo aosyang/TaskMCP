@@ -11,7 +11,7 @@ from fastmcp.exceptions import ToolError
 class TaskMCPHttpE2E(unittest.TestCase):
     def test_agent_contract_end_to_end(self):
         async def run():
-            url = os.environ.get("TASKMCP_MCP_URL", "http://127.0.0.1:8000/mcp")
+            url = os.environ.get("TASKMCP_MCP_URL", "http://127.0.0.1:8010/mcp")
             temp = f"mcp-e2e-{int(time.time())}"
             async with Client(url) as client:
                 original = (await client.call_tool("get_current_workspace_name", {})).structured_content["workspace"]

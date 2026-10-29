@@ -35,11 +35,5 @@ export interface Task {
   position: number;
   comments: string;
   is_current: boolean;
-  board_x: number;
-  board_y: number;
-  board_width: number;
-  board_height: number;
-  children_layout: 'vertical' | 'horizontal';
-  children_comment_display: 'full' | 'compact' | 'none';
   children: Task[];
 }

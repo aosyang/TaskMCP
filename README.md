@@ -12,20 +12,27 @@ A multi-workspace task management system with hierarchical structure, drag-and-d
 - Task comments/notes (Markdown support)
 - Inline task editing
 - WebSocket real-time synchronization (multi-client updates)
-- Two view modes: List view and Canvas view
+- Outline view (Outliner) showing the task hierarchy
+- Current task focus (set / clear / get the task you are working on)
 
-### MCP Server (http://localhost:8000)
+### Intended Agent Workflow
+
+Each workspace represents a project. Select one small, actionable task as the current
+focus. Break it into child tasks only when needed, work from actionable leaf tasks,
+and record progress on the relevant task.
+
+### MCP Server (http://localhost:8010)
 
 **Workspace Management Tools:**
 - `get_current_workspace_name` - Get current workspace name
 - `list_all_workspaces` - List all workspaces
-- `switch_workspace` - Switch workspace (auto-creates if not exists)
+- `switch_workspace` - Switch to an existing workspace (never creates one)
 - `create_workspace` - Create new workspace
 - `delete_workspace` - Delete workspace
 - `rename_workspace` - Rename workspace
 
 **Task Management Tools:**
-- `list_tasks` - List all tasks in current workspace (hierarchical display)
+- `list_tasks` - List compact task summaries with status filtering and pagination
 - `add_task` - Add one task with optional parent and comments in a single call
 - `add_tasks` - Atomically add multiple sibling tasks under one parent (can specify parent_id for subtasks)
 - `update_task` - Update task description or comments
@@ -33,11 +40,20 @@ A multi-workspace task management system with hierarchical structure, drag-and-d
 - `delete_task` - Delete task and all subtasks
 - `get_task` - Get task details
 - `get_task_subtree` - Get one task and all descendants without loading the whole workspace
-- `search_tasks` - Search tasks
-- `move_task` - Move task position
+- `search_tasks` - Search the current workspace with pagination and optional bounded note excerpts
+- `search_tasks_all_workspaces` - Search every workspace with pagination and explicit workspace issues
+- `move_task_as_child` / `move_task_after` / `reorder_task` / `move_task_to_root` - Move task positions
+- `set_task_status` - Set completion state explicitly and safely retry
 - `set_current_task` - Set current working task
 - `clear_current_task` - Clear current working task
 - `get_current_task` - Get current working task
+
+List and search results use structured task summaries and omit full comments by default.
+`count` is the number returned, `total` is the number matching, and `next_cursor` is the
+next offset (or null). List defaults to 50 tasks; searches default to 20; limits are
+clamped to 1-100. Use `get_task` for full task details, `include_comments=true` for
+list/current-task notes, or `include_comment_snippet=true` for bounded search excerpts.
+Canonical detail and mutation responses continue to include full comments.
 
 ## Tech Stack
 
@@ -193,7 +209,7 @@ After starting:
 - Web Interface: 
   - Local: http://localhost:5000
   - Network: http://<your-ip>:5000 (shown on startup if network access enabled)
-- MCP Server: http://localhost:8000/mcp
+- MCP Server: http://localhost:8010/mcp
 
 ### 5. Configure MCP Client
 
@@ -204,7 +220,7 @@ For VS Code, configure `.vscode/mcp.json`:
   "servers": {
     "fastmcp-http": {
       "type": "http",
-      "url": "http://localhost:8000/mcp"
+      "url": "http://localhost:8010/mcp"
     }
   }
 }
@@ -303,7 +319,7 @@ python tests/test_provider_integration.py
 
 ## Agent-facing MCP contract
 
-TaskMCP exposes a Streamable HTTP MCP endpoint at `http://localhost:8000/mcp`. Use an MCP client for protocol checks rather than treating a bare browser `GET /mcp` as a health check. The Web server exposes `GET /health` for lightweight readiness checks.
+TaskMCP exposes a Streamable HTTP MCP endpoint at `http://localhost:8010/mcp`. Use an MCP client for protocol checks rather than treating a bare browser `GET /mcp` as a health check. The Web server exposes `GET /health` for lightweight readiness checks.
 
 Core MCP tools return structured objects instead of presentation-oriented strings. Tool annotations communicate read-only, destructive, and idempotent behavior to MCP clients. `set_task_status(task_id, done)` is the preferred completion API because it is idempotent; `toggle_task` remains only as a compatibility alias. `switch_workspace` only switches to an existing workspace and never creates one implicitly.
 

@@ -16,15 +16,21 @@ from workspace_manager import (
     get_db
 )
 
+MCP_PORT = 8010
+MCP_HOST = "0.0.0.0"
+
 # Initialize FastMCP server
 # Note: FastMCP should handle type coercion by default, but Cursor's MCP client
 # may serialize integers as strings. The function implementations include
 # string-to-int conversion as a fallback.
 mcp = FastMCP(
-    "Task Manager",
+    "TaskMCP",
     version="2.0",
     instructions=(
-        "Task management server with multiple workspaces. "
+        "TaskMCP tracks focused work within a project as an arbitrarily deep task tree. "
+        "Treat each workspace as a project. Select one small, actionable task as the current focus. "
+        "Use child tasks only when needed and work from actionable leaf tasks, recording progress on the relevant task. "
+        "List/search/current-task results omit full comments by default; use get_task for details and follow next_cursor for more results. "
         "All task operations are scoped to the current workspace unless explicitly stated otherwise. "
         "When the target workspace is uncertain, inspect it before mutating tasks. "
         "Use search_tasks when a task ID is unknown. Prefer idempotent setters such as set_task_status over toggle_task. "
@@ -115,11 +121,27 @@ class WorkspaceRenameResult(BaseModel):
     current: bool
 
 
+class TaskSummaryRecord(BaseModel):
+    id: int
+    task: str
+    done: bool
+    parent_id: int | None
+    position: int
+    has_comments: bool
+    comments: str | None = None
+    matched_in: str | None = None
+    comment_excerpt: str | None = None
+
+
 class TaskListResult(BaseModel):
     workspace: str
     count: int
+    total: int
+    cursor: int
+    limit: int
+    next_cursor: int | None
     current_task_id: int | None
-    tasks: list[TaskRecord]
+    tasks: list[TaskSummaryRecord]
 
 
 class TaskCreatedResult(BaseModel):
@@ -168,16 +190,24 @@ class TaskSearchResult(BaseModel):
     workspace: str
     query: str
     count: int
-    tasks: list[TaskRecord]
+    total: int
+    cursor: int
+    limit: int
+    next_cursor: int | None
+    tasks: list[TaskSummaryRecord]
 
 
-class CrossWorkspaceTaskRecord(TaskRecord):
+class CrossWorkspaceTaskRecord(TaskSummaryRecord):
     workspace_name: str
 
 
 class CrossWorkspaceSearchResult(BaseModel):
     query: str
     count: int
+    total: int
+    cursor: int
+    limit: int
+    next_cursor: int | None
     tasks: list[CrossWorkspaceTaskRecord]
     issues: list[WorkspaceIssue]
 
@@ -185,7 +215,7 @@ class CrossWorkspaceSearchResult(BaseModel):
 class CurrentTaskResult(BaseModel):
     workspace: str
     current_task_id: int | None
-    task: TaskRecord | None
+    task: TaskSummaryRecord | None
     dangling: bool
 
 
@@ -320,23 +350,77 @@ def rename_workspace(old_name: str, new_name: str) -> WorkspaceRenameResult:
     return WorkspaceRenameResult(old_name=old_name, new_name=new_name, renamed=True, current=was_current)
 
 # Task management tools
+def _pagination_values(limit, cursor):
+    try:
+        limit, cursor = int(limit), int(cursor)
+    except (TypeError, ValueError) as exc:
+        raise ToolError("INVALID_ARGUMENT: limit and cursor must be integers") from exc
+    return max(1, min(limit, 100)), max(0, cursor)
+
+
+def _summary_record(row, include_comments=False, query=None, include_comment_snippet=False):
+    comments = row["comments"] or ""
+    data = dict(id=int(row["id"]), task=row["task"], done=bool(row["done"]),
+                parent_id=row["parent_id"], position=int(row["position"]),
+                has_comments=bool(comments), comments=comments if include_comments else None)
+    if query is not None:
+        title_match = query.lower() in row["task"].lower()
+        comment_match = query.lower() in comments.lower()
+        data["matched_in"] = "title+notes" if title_match and comment_match else "title" if title_match else "notes"
+        if include_comment_snippet and comment_match:
+            data["comment_excerpt"] = _comment_excerpt(comments, query)
+    return TaskSummaryRecord(**data)
+
+
+def _comment_excerpt(comments, query, max_chars=200):
+    """Return a bounded, single-line excerpt around a comment match."""
+    normalized = " ".join((comments or "").split())
+    if not normalized:
+        return ""
+
+    match_at = normalized.lower().find(query.lower())
+    if match_at < 0:
+        match_at = 0
+
+    before = max_chars // 3
+    start = max(0, match_at - before)
+    end = min(len(normalized), start + max_chars)
+    if end - start < max_chars:
+        start = max(0, end - max_chars)
+
+    excerpt = normalized[start:end]
+    if start > 0:
+        excerpt = "..." + excerpt
+    if end < len(normalized):
+        excerpt += "..."
+    return excerpt
+
+
 @mcp.tool(
-    description="List canonical task records in the current workspace. Read-only. Each record includes ID, status, parent, position, and comments.",
+    description="List task summaries with pagination and all/open/done status filtering. Comments are opt-in via include_comments; use get_task for full details. Parent IDs preserve hierarchy context. Read-only.",
     annotations={"readOnlyHint": True, "openWorldHint": False},
 )
-def list_tasks() -> TaskListResult:
-    workspace = get_current_workspace()
+def list_tasks(include_comments: bool = False, status: str = "all", limit: int = 50, cursor: int = 0) -> TaskListResult:
+    limit, cursor = _pagination_values(limit, cursor)
+    status = status.strip().lower()
+    aliases = {"all": "all", "open": "open", "incomplete": "open", "done": "done", "completed": "done"}
+    if status not in aliases:
+        raise ToolError("INVALID_ARGUMENT: status must be one of: all, open, done")
+    status = aliases[status]
     conn = get_db()
-    rows = conn.execute("SELECT * FROM tasks ORDER BY parent_id, position, id").fetchall()
-    current = conn.execute("SELECT task_id FROM current_task WHERE id = 1").fetchone()
-    conn.close()
-    tasks = [_task_to_record(row) for row in rows]
-    return TaskListResult(
-        workspace=workspace,
-        count=len(tasks),
-        current_task_id=current["task_id"] if current else None,
-        tasks=tasks,
-    )
+    try:
+        rows = conn.execute("SELECT * FROM tasks ORDER BY parent_id, position, id").fetchall()
+        current = conn.execute("SELECT task_id FROM current_task WHERE id = 1").fetchone()
+    finally:
+        conn.close()
+    if status != "all":
+        rows = [row for row in rows if bool(row["done"]) == (status == "done")]
+    total = len(rows)
+    tasks = [_summary_record(row, include_comments=include_comments) for row in rows[cursor:cursor + limit]]
+    end = cursor + len(tasks)
+    return TaskListResult(workspace=get_current_workspace(), count=len(tasks), total=total,
+                          cursor=cursor, limit=limit, next_cursor=end if end < total else None,
+                          current_task_id=current["task_id"] if current else None, tasks=tasks)
 
 def _add_task_impl(task: str, parent_id: int | None = None, comments: str = "") -> TaskCreatedResult:
     if not task or not task.strip():
@@ -590,27 +674,41 @@ def get_task_subtree(task_id: int) -> TaskSubtreeResult:
 
 
 @mcp.tool(
-    description="Search task descriptions and comments in the current workspace. Use this when the task ID is unknown. Read-only.",
+    description="Search task descriptions and comments with pagination. Full comments are omitted; include_comment_snippet opts into a bounded note excerpt. Use get_task for details. Read-only.",
     annotations={"readOnlyHint": True, "openWorldHint": False},
 )
-def search_tasks(query: str) -> TaskSearchResult:
+def search_tasks(query: str, include_comment_snippet: bool = False, limit: int = 20, cursor: int = 0) -> TaskSearchResult:
+    query = query.strip()
+    if not query:
+        raise ToolError("INVALID_ARGUMENT: query must not be empty")
+    limit, cursor = _pagination_values(limit, cursor)
+    pattern = f"%{query}%"
     conn = get_db()
-    rows = conn.execute(
-        "SELECT * FROM tasks WHERE task LIKE ? OR comments LIKE ? ORDER BY position, id",
-        (f"%{query}%", f"%{query}%"),
-    ).fetchall()
-    conn.close()
-    tasks = [_task_to_record(row) for row in rows]
-    return TaskSearchResult(workspace=get_current_workspace(), query=query, count=len(tasks), tasks=tasks)
+    try:
+        total = conn.execute("SELECT COUNT(*) FROM tasks WHERE task LIKE ? OR comments LIKE ?", (pattern, pattern)).fetchone()[0]
+        rows = conn.execute(
+            "SELECT * FROM tasks WHERE task LIKE ? OR comments LIKE ? ORDER BY position, id LIMIT ? OFFSET ?",
+            (pattern, pattern, limit, cursor),
+        ).fetchall()
+    finally:
+        conn.close()
+    tasks = [_summary_record(row, query=query, include_comment_snippet=include_comment_snippet) for row in rows]
+    end = cursor + len(tasks)
+    return TaskSearchResult(workspace=get_current_workspace(), query=query, count=len(tasks), total=total,
+                            cursor=cursor, limit=limit, next_cursor=end if end < total else None, tasks=tasks)
 
 @mcp.tool(
-    description="Search task descriptions and comments across every workspace. Read-only. The issues array reports workspaces that could not be read so results are never silently incomplete.",
+    description="Search task descriptions and comments across every workspace with pagination and optional bounded note excerpts. Full comments are omitted. Read-only. The issues array reports workspaces that could not be read so results are never silently incomplete.",
     annotations={"readOnlyHint": True, "openWorldHint": False},
 )
-def search_tasks_all_workspaces(query: str) -> CrossWorkspaceSearchResult:
-    results = []
-    issues = []
-    for workspace_name in list_workspaces():
+def search_tasks_all_workspaces(query: str, include_comment_snippet: bool = False, limit: int = 20, cursor: int = 0) -> CrossWorkspaceSearchResult:
+    query = query.strip()
+    if not query:
+        raise ToolError("INVALID_ARGUMENT: query must not be empty")
+    limit, cursor = _pagination_values(limit, cursor)
+    results, issues = [], []
+    total = 0
+    for workspace_name in sorted(list_workspaces()):
         conn = None
         try:
             conn = get_db(workspace_name)
@@ -619,14 +717,18 @@ def search_tasks_all_workspaces(query: str) -> CrossWorkspaceSearchResult:
                 (f"%{query}%", f"%{query}%"),
             ).fetchall()
             for row in rows:
-                record = _task_to_record(row)
-                results.append(CrossWorkspaceTaskRecord(workspace_name=workspace_name, **record.model_dump()))
+                if cursor <= total < cursor + limit:
+                    record = _summary_record(row, query=query, include_comment_snippet=include_comment_snippet)
+                    results.append(CrossWorkspaceTaskRecord(workspace_name=workspace_name, **record.model_dump()))
+                total += 1
         except Exception:
             issues.append(WorkspaceIssue(workspace_name=workspace_name, code="WORKSPACE_READ_FAILED"))
         finally:
             if conn is not None:
                 conn.close()
-    return CrossWorkspaceSearchResult(query=query, count=len(results), tasks=results, issues=issues)
+    end = cursor + len(results)
+    return CrossWorkspaceSearchResult(query=query, count=len(results), total=total, cursor=cursor,
+                                     limit=limit, next_cursor=end if end < total else None, tasks=results, issues=issues)
 
 @mcp.tool(
     description="Set an existing task as the current working task in the current workspace. Safe to retry with the same task ID.",
@@ -659,10 +761,10 @@ def clear_current_task() -> CurrentTaskMutationResult:
     )
 
 @mcp.tool(
-    description="Return the current working task and its canonical record. Read-only. If the pointer is stale, dangling=true and task is null.",
+    description="Return the current focused task summary; include_comments opts into full notes. Read-only. If the pointer is stale, dangling=true and task is null.",
     annotations={"readOnlyHint": True, "openWorldHint": False},
 )
-def get_current_task() -> CurrentTaskResult:
+def get_current_task(include_comments: bool = False) -> CurrentTaskResult:
     conn = get_db()
     current = conn.execute("SELECT task_id FROM current_task WHERE id = 1").fetchone()
     if not current:
@@ -674,7 +776,7 @@ def get_current_task() -> CurrentTaskResult:
     return CurrentTaskResult(
         workspace=get_current_workspace(),
         current_task_id=task_id,
-        task=_task_to_record(row),
+        task=_summary_record(row, include_comments=include_comments) if row is not None else None,
         dangling=row is None,
     )
 
@@ -895,4 +997,4 @@ def fix_dangling_tasks() -> FixDanglingTasksResult:
     return FixDanglingTasksResult(workspace=workspace, fixed_count=len(dangling_ids), fixed_task_ids=dangling_ids)
 
 if __name__ == "__main__":
-    mcp.run(transport="http")
+    mcp.run(transport="http", host=MCP_HOST, port=MCP_PORT)

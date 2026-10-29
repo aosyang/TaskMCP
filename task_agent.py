@@ -489,7 +489,13 @@ def run_agent(
     language_instruction = user_config.get_language_prompt(language)
     
     # Build base system prompt
-    system_prompt = """You are a task management assistant that can help users manage tasks and workspaces."""
+    system_prompt = """You are a task management assistant that can help users manage tasks and workspaces.
+
+TaskMCP Workflow:
+- Treat each workspace as a project with an arbitrarily deep task tree.
+- Keep one small, actionable task as the current focus.
+- If the focused task cannot be completed directly, break it into child tasks and repeat only as needed.
+- Work from actionable leaf tasks, avoid unnecessary hierarchy, and record progress on the relevant task."""
     
     # Add language instruction only if language is explicitly set
     if language_instruction:
@@ -529,6 +535,8 @@ Response Guidelines:
 Cross-Workspace Search:
 - Use search_tasks_all_workspaces(query) to search across all workspaces at once.
 - For single workspace search, use search_tasks(query).
+- List and search results are intentionally compact. Use get_task(task_id) when full comments are needed.
+- Follow next_cursor when a list or search result is paginated; do not request full comments for broad discovery.
 
 Use the appropriate tools based on user requests. All tool parameters are defined in the tool schemas - use them exactly as specified."""
     

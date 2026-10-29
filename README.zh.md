@@ -12,9 +12,10 @@
 - 任务备注/评论（支持Markdown）
 - 内联编辑任务名称
 - WebSocket实时同步（多客户端实时更新）
-- 两种视图模式：列表视图和画布视图
+- 大纲视图（Outliner）显示任务层级结构
+- 当前任务焦点（设置 / 清除 / 获取正在工作的任务）
 
-### MCP服务器 (http://localhost:8000)
+### MCP服务器 (http://localhost:8010)
 
 **Workspace管理工具：**
 - `get_current_workspace_name` - 获取当前工作区名称
@@ -98,7 +99,7 @@ python app.py
 - Web界面: 
   - 本地访问: http://localhost:5000
   - 局域网访问: http://<你的IP地址>:5000 (如果允许网络访问，启动时会显示)
-- MCP服务器: http://localhost:8000/mcp
+- MCP服务器: http://localhost:8010/mcp
 
 ### 4. 配置MCP客户端
 
@@ -109,7 +110,7 @@ python app.py
   "servers": {
     "fastmcp-http": {
       "type": "http",
-      "url": "http://localhost:8000/mcp"
+      "url": "http://localhost:8010/mcp"
     }
   }
 }

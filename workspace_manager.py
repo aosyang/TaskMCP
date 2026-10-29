@@ -111,13 +111,7 @@ def init_db(workspace_name):
             done INTEGER DEFAULT 0,
             parent_id INTEGER,
             position INTEGER DEFAULT 0,
-            comments TEXT DEFAULT '',
-            board_x REAL DEFAULT 0,
-            board_y REAL DEFAULT 0,
-            board_width REAL DEFAULT 240,
-            board_height REAL DEFAULT 100,
-            children_layout TEXT DEFAULT 'vertical',
-            children_comment_display TEXT DEFAULT 'compact'
+            comments TEXT DEFAULT ''
         )
     ''')
     c.execute('''
