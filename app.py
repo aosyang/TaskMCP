@@ -151,6 +151,8 @@ def toggle_task(id):
     if row:
         new_done = 0 if row['done'] else 1
         conn.execute('UPDATE tasks SET done = ? WHERE id = ?', (new_done, id))
+        if new_done:
+            conn.execute('DELETE FROM current_task WHERE id = 1 AND task_id = ?', (id,))
         conn.commit()
     
     conn.close()
@@ -197,6 +199,14 @@ def reorder_tasks():
 @app.route('/set_current/<int:task_id>', methods=['POST'])
 def set_current_task(task_id):
     conn = get_db()
+    # A completed task cannot become Current.
+    row = conn.execute('SELECT done FROM tasks WHERE id = ?', (task_id,)).fetchone()
+    if row is None:
+        conn.close()
+        return jsonify({'error': 'Task not found'}), 404
+    if row['done']:
+        conn.close()
+        return jsonify({'error': 'Completed tasks cannot be current'}), 409
     # Clear existing current task and set new one
     conn.execute('DELETE FROM current_task WHERE id = 1')
     conn.execute('INSERT INTO current_task (id, task_id) VALUES (1, ?)', (task_id,))

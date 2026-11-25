@@ -71,7 +71,7 @@ def search_images(query: str, max_results: int = 5) -> str:
     
     try:
         with DDGS() as ddgs:
-            images = list(ddgs.images(query, max_results=max_results))
+            images = list(ddgs.images(query, safesearch="off", max_results=max_results))
             
             if not images:
                 return f"No images found for query: {query}"

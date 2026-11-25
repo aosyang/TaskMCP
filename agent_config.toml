@@ -4,7 +4,7 @@
 # Provider configuration (optional, defaults to "lm_studio" if not specified)
 # Supported providers: "ollama", "openai", "lm_studio"
 [provider]
-type = "openai"
+type = "lm_studio"
 
 # Ollama provider configuration
 [ollama]
@@ -20,7 +20,7 @@ model = "gpt-4o-mini"
 
 # LM Studio provider configuration
 [lm_studio]
-model = ""  # Default model name
+model = "devstral-small-2-24b-instruct-2512"  # Default model name
 # base_url = "http://localhost:1234/v1"  # Optional, defaults to http://localhost:1234/v1
 # api_key is optional (LM Studio defaults to no API key required)
 # Can be set via LM_STUDIO_API_KEY environment variable if needed

@@ -17,11 +17,13 @@ function App() {
     return (saved === 'dark' || saved === 'light') ? saved : 'light';
   });
   const [focusedTaskId, setFocusedTaskId] = useState<number | null>(null);
+  const [hideCompleted, setHideCompleted] = useState(false);
   const [showOutliner, setShowOutliner] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const [stickyOffset, setStickyOffset] = useState(10);
   const [showManageText, setShowManageText] = useState(true);
   const [isTaskInputFocused, setIsTaskInputFocused] = useState(false);
+  const [showFocusAdd, setShowFocusAdd] = useState(false);
   const blurTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const [showToast, setShowToast] = useState(false);
   const [toastFadingOut, setToastFadingOut] = useState(false);
@@ -64,7 +66,7 @@ function App() {
     window.addEventListener('resize', checkManageButtonSpace);
     // Also check after a short delay to ensure DOM is ready
     const timer = setTimeout(checkManageButtonSpace, 100);
-    
+
     return () => {
       window.removeEventListener('resize', checkManageButtonSpace);
       clearTimeout(timer);
@@ -93,7 +95,7 @@ function App() {
   useEffect(() => {
     loadWorkspaces();
     loadTasks();
-    
+
     // Connect to WebSocket for real-time updates
     const script = document.createElement('script');
     script.src = 'https://cdn.socket.io/4.5.4/socket.io.min.js';
@@ -108,7 +110,7 @@ function App() {
       });
     };
     document.head.appendChild(script);
-    
+
     return () => {
       script.remove();
     };
@@ -143,7 +145,7 @@ function App() {
     const body: any = {};
     if (task !== undefined) body.task = task;
     if (comments !== undefined) body.comments = comments;
-    
+
     await fetch(`/edit/${id}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -220,34 +222,24 @@ function App() {
   };
 
   const getStickyOffset = (): number => {
-    // Calculate the total height of sticky divs (Comments + Focus Mode if exists)
-    let offset = 0;
-    
-    // Find Comments div by searching for the div containing "Comments:" text
     const mainContent = document.querySelector('#main-content');
-    if (mainContent) {
-      const allDivs = mainContent.querySelectorAll('div');
-      for (const div of allDivs) {
-        const style = window.getComputedStyle(div);
-        if (style.position === 'sticky' && div.textContent?.includes('Comments:')) {
-          offset += div.getBoundingClientRect().height;
-          break;
-        }
-      }
-      
-      // Find Focus Mode div by searching for the div containing "Focus Mode" text
-      if (focusedTaskId !== null) {
-        for (const div of allDivs) {
-          const style = window.getComputedStyle(div);
-          if (style.position === 'sticky' && div.textContent?.includes('Focus Mode')) {
-            offset += div.getBoundingClientRect().height;
-            break;
-          }
-        }
-      }
+    if (!mainContent) return 10;
+
+    let obstructionBottom = 0;
+    const elements = mainContent.querySelectorAll<HTMLElement>('*');
+    for (const element of elements) {
+      const style = window.getComputedStyle(element);
+      if (style.position !== 'sticky' || style.display === 'none' || style.visibility === 'hidden') continue;
+
+      const rect = element.getBoundingClientRect();
+      if (rect.height <= 0) continue;
+
+      const stickyTop = Number.parseFloat(style.top);
+      const top = Number.isFinite(stickyTop) ? stickyTop : 0;
+      obstructionBottom = Math.max(obstructionBottom, top + rect.height);
     }
-    
-    return offset + 10; // Add 10px extra padding
+
+    return obstructionBottom + 10;
   };
 
   // Update sticky offset for button positioning
@@ -258,18 +250,18 @@ function App() {
         let maxBottom = 0;
         let toastOffset = 0;
         const allDivs = mainContent.querySelectorAll('div');
-        
+
         // Find all sticky divs and check if they're actually "stuck" at the top
         for (const div of allDivs) {
           const style = window.getComputedStyle(div);
           if (style.position === 'sticky') {
             const rect = div.getBoundingClientRect();
             const stickyTop = parseInt(style.top) || 0;
-            
+
             // Check if the sticky element is actually "stuck" (its top matches the sticky top value)
             // Allow a small tolerance (2px) for rounding
             const isStuck = Math.abs(rect.top - stickyTop) < 2;
-            
+
             if (isStuck) {
               // Calculate bottom position: top + height
               const bottom = rect.top + rect.height;
@@ -277,7 +269,7 @@ function App() {
                 maxBottom = bottom;
               }
             }
-            
+
             // For toast, calculate offset based on all sticky elements (whether stuck or not)
             // This ensures toast doesn't overlap sticky elements even when they're not stuck
             if (div.textContent?.includes('Comments:') || div.textContent?.includes('Focus Mode')) {
@@ -285,7 +277,7 @@ function App() {
             }
           }
         }
-        
+
         // Set offset to the bottom of the lowest stuck sticky element + padding
         // If no sticky elements are stuck, use default 10px
         if (maxBottom > 0) {
@@ -293,7 +285,7 @@ function App() {
         } else {
           setStickyOffset(10);
         }
-        
+
         // Set toast offset (always consider sticky elements to avoid overlap)
         setToastTopOffset(Math.max(20, toastOffset + 10));
       } else {
@@ -303,14 +295,14 @@ function App() {
     };
 
     updateStickyOffset();
-    
+
     // Update on scroll and resize
     window.addEventListener('scroll', updateStickyOffset);
     window.addEventListener('resize', updateStickyOffset);
-    
+
     // Also update when focusedTaskId changes or tasks update
     const timer = setTimeout(updateStickyOffset, 100);
-    
+
     return () => {
       window.removeEventListener('scroll', updateStickyOffset);
       window.removeEventListener('resize', updateStickyOffset);
@@ -320,25 +312,58 @@ function App() {
 
   const scrollToCurrentTask = () => {
     const currentTask = findCurrentTask(tasks);
-    if (currentTask) {
-      const element = document.querySelector(`[data-task-id="${currentTask.id}"]`) as HTMLElement;
-      if (element) {
-        const offset = getStickyOffset();
-        const elementTop = element.getBoundingClientRect().top + window.pageYOffset;
-        const offsetPosition = elementTop - offset;
-        
-        window.scrollTo({
-          top: offsetPosition,
-          behavior: 'smooth'
-        });
+    if (!currentTask) return;
+    const findPath = (nodes: Task[]): number[] | null => {
+      for (const task of nodes) {
+        if (task.id === currentTask.id) return [task.id];
+        const child = findPath(task.children);
+        if (child) return [task.id, ...child];
       }
-    }
+      return null;
+    };
+    const path = findPath(tasks) || [];
+    if (hideCompleted && currentTask.done) setTaskFilterPreference(false);
+    if (focusedTaskId !== null && !path.includes(focusedTaskId)) setFocusedTaskId(null);
+    setCollapsedTaskIds(prev => {
+      const next = new Set(prev);
+      path.slice(0, -1).forEach(id => next.delete(id));
+      return next;
+    });
+    setTimeout(() => scrollToTask(currentTask.id), 100);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       handleAdd();
     }
+  };
+
+  // Collapse every finished branch and leave everything else alone: tasks that
+  // are not done keep whatever open/closed state they already had, so this
+  // never expands a branch the user (or an agent) had closed.
+  const handleFoldCompleted = () => {
+    const doneBranchIds: number[] = [];
+    const walk = (list: Task[]) => {
+      list.forEach((task) => {
+        if (task.done && task.children && task.children.length > 0) {
+          doneBranchIds.push(task.id);
+        }
+        if (task.children) {
+          walk(task.children);
+        }
+      });
+    };
+    walk(tasks);
+    if (doneBranchIds.length === 0) {
+      showToastNotification('没有可折叠的已完成分支');
+      return;
+    }
+    setCollapsedTaskIds((prev) => {
+      const next = new Set(prev);
+      doneBranchIds.forEach((id) => next.add(id));
+      return next;
+    });
+    showToastNotification(`已折叠 ${doneBranchIds.length} 个已完成分支`);
   };
 
   const handleSwitchWorkspace = async (workspace: string) => {
@@ -403,16 +428,33 @@ function App() {
 
   const scrollToTask = (id: number) => {
     const element = document.querySelector(`[data-task-id="${id}"]`) as HTMLElement;
-    if (element) {
-      const offset = getStickyOffset();
-      const elementTop = element.getBoundingClientRect().top + window.pageYOffset;
-      const offsetPosition = elementTop - offset;
-      
-      window.scrollTo({
-        top: offsetPosition,
-        behavior: 'smooth'
-      });
-    }
+    if (!element) return;
+
+    const correctFinalPosition = () => {
+      const current = document.querySelector(`[data-task-id="${id}"]`) as HTMLElement;
+      if (!current) return;
+
+      const desiredTop = getStickyOffset();
+      const actualTop = current.getBoundingClientRect().top;
+      const delta = actualTop - desiredTop;
+
+      if (Math.abs(delta) > 2) {
+        window.scrollBy({ top: delta, behavior: 'auto' });
+      }
+    };
+
+    element.style.scrollMarginTop = `${getStickyOffset()}px`;
+
+    // Correct only after the browser reports the smooth scroll has ended, so
+    // the correction cannot race the animation. The timeout is a fallback for
+    // browsers that do not reliably emit scrollend.
+    window.addEventListener('scrollend', correctFinalPosition, { once: true });
+    window.setTimeout(correctFinalPosition, 900);
+
+    element.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start'
+    });
   };
 
   const findTaskById = (tasks: Task[], id: number): Task | null => {
@@ -426,6 +468,42 @@ function App() {
     return null;
   };
 
+  useEffect(() => {
+    if (!currentWorkspace) return;
+    const saved = localStorage.getItem('taskmcp.focusedTaskId:' + currentWorkspace);
+    const parsed = saved ? Number(saved) : NaN;
+    setFocusedTaskId(Number.isFinite(parsed) ? parsed : null);
+  }, [currentWorkspace]);
+
+  useEffect(() => {
+    if (!currentWorkspace) return;
+    const key = 'taskmcp.focusedTaskId:' + currentWorkspace;
+    if (focusedTaskId === null) {
+      localStorage.removeItem(key);
+    } else {
+      localStorage.setItem(key, String(focusedTaskId));
+    }
+  }, [currentWorkspace, focusedTaskId]);
+
+  useEffect(() => {
+    if (!currentWorkspace || focusedTaskId === null || tasks.length === 0) return;
+    if (!findTaskById(tasks, focusedTaskId)) {
+      setFocusedTaskId(null);
+    }
+  }, [currentWorkspace, focusedTaskId, tasks]);
+
+  useEffect(() => {
+    if (!currentWorkspace) return;
+    const saved = localStorage.getItem('taskmcp.taskFilter:' + currentWorkspace);
+    setHideCompleted(saved === 'open');
+  }, [currentWorkspace]);
+
+  const setTaskFilterPreference = (open: boolean) => {
+    setHideCompleted(open);
+    if (!currentWorkspace) return;
+    localStorage.setItem('taskmcp.taskFilter:' + currentWorkspace, open ? 'open' : 'all');
+  };
+
   const handleFocusTask = (id: number) => {
     setFocusedTaskId(id);
   };
@@ -434,11 +512,32 @@ function App() {
     setFocusedTaskId(null);
   };
 
-  const getFilteredTasks = (): Task[] => {
+  const getScopedTasks = (): Task[] => {
     if (focusedTaskId === null) return tasks;
     const focusedTask = findTaskById(tasks, focusedTaskId);
     return focusedTask ? [focusedTask] : tasks;
   };
+
+  const filterOpen = (nodes: Task[]): Task[] => nodes.flatMap(task => {
+    const children = filterOpen(task.children);
+    return !task.done || children.length > 0 || task.id === focusedTaskId
+      ? [{ ...task, children }]
+      : [];
+  });
+
+  const countTasks = (nodes: Task[]): { all: number; open: number } =>
+    nodes.reduce((count, task) => {
+      const child = countTasks(task.children);
+      return { all: count.all + 1 + child.all, open: count.open + (task.done ? 0 : 1) + child.open };
+    }, { all: 0, open: 0 });
+
+  const scopedTasks = getScopedTasks();
+  const visibleTasks = hideCompleted ? filterOpen(scopedTasks) : scopedTasks;
+  const taskCounts = countTasks(scopedTasks);
+  const allTaskCounts = countTasks(tasks);
+  const hiddenTaskCount = focusedTaskId !== null
+    ? Math.max(0, allTaskCounts.all - countTasks(scopedTasks).all)
+    : 0;
 
   return (
     <>
@@ -560,9 +659,9 @@ function App() {
               overscrollBehavior: isMobile ? 'contain' : 'auto'
             }}
           >
-            <Outliner 
-              tasks={getFilteredTasks()} 
-              onScrollToTask={scrollToTask} 
+            <Outliner
+              tasks={visibleTasks}
+              onScrollToTask={scrollToTask}
               findCurrentTask={findCurrentTask}
               collapsedTaskIds={collapsedTaskIds}
               onToggleCollapse={(id: number) => {
@@ -578,11 +677,38 @@ function App() {
               }}
             />
           </div>
-          <div id="main-content" style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: isMobile ? 'block' : 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '10px' }}>
-            <h1 style={{ textWrap: 'balance', marginBottom: isMobile ? '10px' : '0', textAlign: isMobile ? 'center' : 'left' }}>Task List</h1>
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', width: isMobile ? '100%' : 'auto', flexShrink: 0 }}>
-              <button 
+          <div id="main-content" style={{ flex: 1, minWidth: 0, maxWidth: 'none' }}>
+          <div style={{
+            display: isMobile ? 'block' : 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: focusedTaskId !== null ? '6px' : '10px',
+            gap: focusedTaskId !== null ? '6px' : '10px',
+            position: 'relative',
+            zIndex: 101,
+            opacity: focusedTaskId !== null ? 0.72 : 1
+          }}>
+            {focusedTaskId === null && (
+              <h1 style={{
+                textWrap: 'balance',
+                marginBottom: isMobile ? '10px' : '0',
+                textAlign: isMobile ? 'center' : 'left'
+              }}>Task List</h1>
+            )}
+            <div style={{ display: 'flex', gap: focusedTaskId !== null ? '6px' : '10px', alignItems: 'center', width: isMobile ? '100%' : 'auto', flexShrink: 0, marginLeft: focusedTaskId !== null ? 'auto' : undefined }}>
+              {focusedTaskId !== null && !showFocusAdd && (
+                <button
+                  type="button"
+                  className="btn-comments"
+                  onClick={() => setShowFocusAdd(true)}
+                  aria-label="Add task"
+                  title="Add task"
+                  style={{ padding: '4px 8px', minHeight: '32px', color: 'var(--text-secondary)' }}
+                >
+                  ＋ Add task
+                </button>
+              )}
+              <button
                 onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
@@ -597,19 +723,12 @@ function App() {
               >
                 {theme === 'light' ? '🌙' : '☀️'}
               </button>
-              <select 
-                value={currentWorkspace} 
+              <select
+                className="workspace-select"
+                value={currentWorkspace}
                 onChange={(e) => handleSwitchWorkspace(e.target.value)}
                 aria-label="Select workspace"
                 style={{
-                  padding: '8px 12px',
-                  fontSize: '14px',
-                  borderRadius: '4px',
-                  border: '1px solid var(--border-primary)',
-                  background: 'var(--bg-secondary)',
-                  color: 'var(--text-primary)',
-                  cursor: 'pointer',
-                  minHeight: '44px',
                   flex: '1 1 0',
                   minWidth: 0
                 }}
@@ -618,7 +737,7 @@ function App() {
                   <option key={ws} value={ws}>{ws}</option>
                 ))}
               </select>
-              <button 
+              <button
                 onClick={() => setShowWorkspaceManager(!showWorkspaceManager)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
@@ -629,7 +748,7 @@ function App() {
                 className="theme-toggle"
                 aria-label="Manage workspaces"
                 aria-expanded={showWorkspaceManager}
-                style={{ flexShrink: 0, whiteSpace: 'nowrap' }}
+                style={{ flexShrink: 0, whiteSpace: 'nowrap', opacity: focusedTaskId !== null ? 0.8 : 1 }}
               >
                 ⚙️ {showManageText && ' Manage'}
               </button>
@@ -645,7 +764,7 @@ function App() {
               marginBottom: '20px'
             }}>
               <h3>Workspace Manager</h3>
-              
+
               <div style={{ marginBottom: '15px' }}>
                 <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
                   <label htmlFor="new-workspace-input" className="sr-only">New workspace name</label>
@@ -659,22 +778,17 @@ function App() {
                     onKeyDown={(e) => e.key === 'Enter' && handleCreateWorkspace()}
                     autoComplete="off"
                     aria-label="New workspace name"
-                    style={{ 
-                      flex: 1, 
-                      padding: '8px', 
-                      fontSize: 'var(--font-size-md)',
-                      background: 'var(--bg-secondary)',
-                      color: 'var(--text-primary)',
-                      border: '1px solid var(--border-primary)',
-                      borderRadius: '4px',
-                      minHeight: '44px'
+                    className="workspace-select"
+                    style={{
+                      flex: 1,
+                      minWidth: 0
                     }}
                   />
-                  <button 
-                    onClick={handleCreateWorkspace} 
-                    className="btn btn-add" 
+                  <button
+                    onClick={handleCreateWorkspace}
+                    className="btn btn-add"
                     aria-label="Create workspace"
-                    style={{ padding: '8px 16px', minHeight: '44px', minWidth: '44px' }}
+                    style={{ minHeight: 'var(--control-height)', minWidth: 'var(--control-height)' }}
                   >
                     ➕ Create
                   </button>
@@ -692,14 +806,14 @@ function App() {
                       padding: '8px',
                       background: ws === currentWorkspace ? 'var(--bg-current)' : 'var(--bg-secondary)',
                       marginBottom: '4px',
-                      borderRadius: '4px'
+                      borderRadius: '8px'
                     }}>
                       <span style={{ fontWeight: ws === currentWorkspace ? 'bold' : 'normal' }}>
                         {ws} {ws === currentWorkspace && '(current)'}
                       </span>
                       <div style={{ display: 'flex', gap: '8px' }}>
                         {ws !== currentWorkspace && (
-                          <button 
+                          <button
                             onClick={() => handleSwitchWorkspace(ws)}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter' || e.key === ' ') {
@@ -713,7 +827,7 @@ function App() {
                             Switch
                           </button>
                         )}
-                        <button 
+                        <button
                           onClick={() => handleRenameWorkspace(ws)}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' || e.key === ' ') {
@@ -727,7 +841,7 @@ function App() {
                           Rename
                         </button>
                         {ws !== currentWorkspace && (
-                          <button 
+                          <button
                             onClick={() => handleDeleteWorkspace(ws)}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter' || e.key === ' ') {
@@ -749,84 +863,63 @@ function App() {
             </div>
           )}
 
-          <div className="add-form" style={{ flexDirection: isMobile ? 'column' : 'row' }}>
-            <label htmlFor="new-task-input" className="sr-only">Add a new task</label>
-            <input
-              id="new-task-input"
-              type="text"
-              name="task"
-              placeholder="Add a new task."
-              value={newTask}
-              onChange={(e) => setNewTask(e.target.value)}
-              onKeyDown={handleKeyDown}
-              onFocus={() => {
-                if (blurTimeoutRef.current) {
-                  clearTimeout(blurTimeoutRef.current);
-                  blurTimeoutRef.current = null;
-                }
-                setIsTaskInputFocused(true);
-              }}
-              onBlur={(e) => {
-                // Delay blur to allow button clicks
-                blurTimeoutRef.current = setTimeout(() => {
-                  // Check if the related target (what's being focused) is a button
-                  const relatedTarget = e.relatedTarget as HTMLElement;
-                  if (!relatedTarget || !relatedTarget.closest('.add-form button')) {
-                    setIsTaskInputFocused(false);
+          {(focusedTaskId === null || showFocusAdd) && (
+            <div className="add-form" style={{ flexDirection: isMobile ? 'column' : 'row', marginBottom: focusedTaskId !== null ? '6px' : undefined }}>
+              <label htmlFor="new-task-input" className="sr-only">Add a new task</label>
+              <input
+                id="new-task-input"
+                type="text"
+                name="task"
+                placeholder="Add a new task."
+                value={newTask}
+                onChange={(e) => setNewTask(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onFocus={() => {
+                  if (blurTimeoutRef.current) {
+                    clearTimeout(blurTimeoutRef.current);
+                    blurTimeoutRef.current = null;
                   }
-                }, 150);
-              }}
-              autoComplete="off"
-              aria-label="New task input"
-              style={{ width: isMobile ? '100%' : 'auto' }}
-            />
-            {isMobile && isTaskInputFocused && (
-              <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
-                <button 
-                  onMouseDown={(e) => {
-                    e.preventDefault(); // Prevent input blur
-                  }}
-                  onClick={() => {
-                    setNewTask('');
-                    // Keep focus on input after clearing
-                    const input = document.getElementById('new-task-input') as HTMLInputElement;
-                    if (input) {
-                      input.focus();
+                  setIsTaskInputFocused(true);
+                }}
+                onBlur={(e) => {
+                  blurTimeoutRef.current = setTimeout(() => {
+                    const relatedTarget = e.relatedTarget as HTMLElement;
+                    if (!relatedTarget || !relatedTarget.closest('.add-form button')) {
+                      setIsTaskInputFocused(false);
+                      if (focusedTaskId !== null && !newTask.trim()) setShowFocusAdd(false);
                     }
-                  }}
-                  className="btn-clear"
-                  aria-label="Clear input"
-                  style={{ flex: 1 }}
-                >
-                  ❌ Clear
-                </button>
-                <button 
-                  onMouseDown={(e) => {
-                    e.preventDefault(); // Prevent input blur
-                  }}
-                  onClick={handleAdd}
-                  aria-label="Add task"
-                  style={{
-                    flex: 1,
-                    width: 'auto'
-                  }}
-                >
-                  ➕ Add
-                </button>
-              </div>
-            )}
-            {!isMobile && (
-              <button 
-                onClick={handleAdd}
-                aria-label="Add task"
-              >
-                ➕ Add
-              </button>
-            )}
-          </div>
+                  }, 150);
+                }}
+                autoComplete="off"
+                aria-label="New task input"
+                style={{ width: isMobile ? '100%' : 'auto' }}
+              />
+              {isMobile && isTaskInputFocused && (
+                <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
+                  <button
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setNewTask('');
+                      const input = document.getElementById('new-task-input') as HTMLInputElement;
+                      if (input) input.focus();
+                    }}
+                    className="btn-clear"
+                    aria-label="Clear input"
+                    style={{ flex: 1 }}
+                  >
+                    ❌ Clear
+                  </button>
+                  <button onMouseDown={(e) => e.preventDefault()} onClick={handleAdd} aria-label="Add task" style={{ flex: 1, width: 'auto' }}>
+                    ➕ Add
+                  </button>
+                </div>
+              )}
+              {!isMobile && <button onClick={handleAdd} aria-label="Add task">➕ Add</button>}
+            </div>
+          )}
 
           <ListView
-            tasks={getFilteredTasks()}
+            tasks={visibleTasks}
             onToggle={handleToggle}
             onEdit={handleEdit}
             onDelete={handleDelete}
@@ -840,6 +933,12 @@ function App() {
             handleUnfocus={handleUnfocus}
             findTaskById={findTaskById}
             collapsedTaskIds={collapsedTaskIds}
+            onFoldCompleted={handleFoldCompleted}
+            hideCompleted={hideCompleted}
+            onSetHideCompleted={setTaskFilterPreference}
+            taskCounts={taskCounts}
+            currentTask={findCurrentTask(tasks)}
+            hiddenTaskCount={hiddenTaskCount}
             onToggleCollapse={(id: number) => {
               setCollapsedTaskIds(prev => {
                 const next = new Set(prev);

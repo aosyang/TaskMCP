@@ -27,11 +27,11 @@
             --shadow-elevated: rgba(0,0,0,0.15);
             --code-bg: #f5f5f7;
             --link-color: #2563eb;
-            
+
             /* Typography */
             --font-display: 'Manrope', -apple-system, sans-serif;
             --font-mono: 'JetBrains Mono', 'Courier New', monospace;
-            
+
             /* Typography - Font Sizes */
             --font-size-xs: 10px;    /* Extra small: icon buttons */
             --font-size-sm: 12px;    /* Small: auxiliary text, small buttons */
@@ -39,6 +39,13 @@
             --font-size-md: 16px;    /* Medium: input fields, important text */
             --font-size-lg: 18px;    /* Large: icons */
             --font-size-xl: 24px;    /* Extra large: large icons */
+            /* Shared chrome control language (desktop-compact; mobile overrides below) */
+            --control-height: 32px;
+            --control-radius: 8px;
+            --control-pad-y: 4px;
+            --control-pad-x: 10px;
+            --control-font: 13px;
+            --control-border-width: 1px;
             --bg-done: #e8f5e9;
             --bg-current: #fff9e6;
             --border-done: #4caf50;
@@ -120,7 +127,7 @@
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         /* Scrollbar styles */
         ::-webkit-scrollbar {
             width: 12px;
@@ -142,13 +149,13 @@
             scrollbar-width: thin;
             scrollbar-color: var(--border-primary) var(--bg-primary);
         }
-        
+
         body {
             font-family: var(--font-display);
             padding: 0;
             margin: 0;
             background: var(--bg-primary);
-            background-image: 
+            background-image:
                 radial-gradient(at 20% 30%, rgba(37, 99, 235, 0.03) 0px, transparent 50%),
                 radial-gradient(at 80% 70%, rgba(139, 92, 246, 0.03) 0px, transparent 50%);
             color: var(--text-primary);
@@ -158,13 +165,13 @@
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
         }
-        
+
         [data-theme="dark"] body {
-            background-image: 
+            background-image:
                 radial-gradient(at 20% 30%, rgba(96, 165, 250, 0.05) 0px, transparent 50%),
                 radial-gradient(at 80% 70%, rgba(168, 85, 247, 0.05) 0px, transparent 50%);
         }
-        
+
         @keyframes fadeInUp {
             from {
                 opacity: 0;
@@ -175,7 +182,7 @@
                 transform: translateY(0);
             }
         }
-        
+
         @keyframes fadeIn {
             from {
                 opacity: 0;
@@ -184,23 +191,23 @@
                 opacity: 1;
             }
         }
-        
+
         .task-item {
             animation: fadeInUp 0.4s ease-out backwards;
         }
-        
+
         .task-item:nth-child(1) { animation-delay: 0.05s; }
         .task-item:nth-child(2) { animation-delay: 0.1s; }
         .task-item:nth-child(3) { animation-delay: 0.15s; }
         .task-item:nth-child(4) { animation-delay: 0.2s; }
         .task-item:nth-child(5) { animation-delay: 0.25s; }
-        
+
         @media (prefers-reduced-motion: reduce) {
             .task-item {
                 animation: fadeIn 0.01ms !important;
             }
         }
-        
+
         /* Skip link for accessibility */
         .skip-link {
             position: absolute;
@@ -216,7 +223,7 @@
         .skip-link:focus {
             top: 0;
         }
-        
+
         @media (prefers-reduced-motion: reduce) {
             *,
             *::before,
@@ -242,7 +249,7 @@
             backdrop-filter: blur(10px);
             animation: fadeInUp 0.5s ease-out;
         }
-        
+
         /* Responsive design for mobile */
         @media (max-width: 768px) {
             #app > div {
@@ -251,13 +258,13 @@
             #app > div > div:last-child {
                 padding: 20px;
                 margin-top: 10px;
-                margin-bottom: 10px;
+                margin-bottom: 0;
                 border-radius: 12px;
                 width: 100%;
                 max-width: 100%;
             }
             h1 {
-                font-size: 1.75rem;
+                font-size: 1.35rem;
             }
             .add-form {
                 flex-direction: row;
@@ -266,8 +273,20 @@
                 flex: 1;
                 margin-bottom: 0;
             }
+            .add-form input,
+            .add-form button,
+            .theme-toggle,
+            .workspace-select,
+            .btn-clear {
+                min-height: 40px;
+            }
+            .add-form button,
+            .theme-toggle,
+            .btn-clear {
+                min-width: 40px;
+            }
             .task-item {
-                padding: 12px;
+                padding: 8px;
             }
             .task-actions {
                 flex-wrap: wrap;
@@ -278,126 +297,104 @@
                 justify-content: flex-start;
                 gap: 8px;
             }
+            .task-actions-mobile .btn {
+                min-width: 36px;
+                min-height: 36px;
+                padding: 6px 10px;
+            }
             .task-item > div:first-child {
                 flex-wrap: wrap;
             }
         }
-        
+
         @media (max-width: 480px) {
             #app > div > div:last-child {
                 padding: 16px;
                 border-radius: 8px;
             }
             h1 {
-                font-size: 1.5rem;
+                font-size: 1.25rem;
             }
         }
         h1 {
-            margin-bottom: 20px;
+            margin-bottom: 10px;
             color: var(--text-primary);
             font-weight: 700;
-            font-size: 2rem;
+            font-size: 1.25rem;
             letter-spacing: -0.02em;
-            line-height: 1.2;
+            line-height: 1.25;
         }
-        
+
         h3, h4 {
             font-weight: 600;
             letter-spacing: -0.01em;
         }
         .add-form {
             display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
+            gap: 8px;
+            margin-bottom: 12px;
+            align-items: center;
         }
-        .add-form input {
-            flex: 1;
-            padding: 12px 16px;
-            border: 2px solid var(--border-primary);
-            border-radius: 10px;
-            font-size: 16px;
+        /* Shared chrome control shell — keep deltas on specific classes only */
+        .add-form input,
+        .add-form button,
+        .btn-clear,
+        .theme-toggle,
+        .workspace-select {
+            box-sizing: border-box;
+            min-height: var(--control-height);
+            height: var(--control-height);
+            padding: var(--control-pad-y) var(--control-pad-x);
+            border: var(--control-border-width) solid var(--border-primary);
+            border-radius: var(--control-radius);
+            font-size: var(--control-font);
             background: var(--bg-secondary);
             color: var(--text-primary);
             touch-action: manipulation;
-            min-height: 24px;
-            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            line-height: 1;
+        }
+        .add-form button,
+        .btn-clear,
+        .theme-toggle {
+            cursor: pointer;
+            min-width: var(--control-height);
+            font-weight: 600;
+            transition: background-color 0.15s ease, border-color 0.15s ease;
+        }
+        .add-form input:focus-visible,
+        .add-form button:focus-visible,
+        .btn-clear:focus-visible,
+        .theme-toggle:focus-visible,
+        .workspace-select:focus-visible,
+        .btn-comments:focus-visible {
+            outline: 2px solid var(--link-color);
+            outline-offset: 2px;
+        }
+        .add-form input {
+            flex: 1;
             font-family: var(--font-display);
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
         }
         .add-form input:focus {
             border-color: var(--link-color);
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
             outline: none;
         }
-        .add-form input:focus-visible {
-            outline: 2px solid var(--link-color);
-            outline-offset: 2px;
-        }
         .add-form button {
-            padding: 12px 24px;
             background: var(--btn-add-bg);
             color: var(--btn-add-color);
-            border: none;
-            border-radius: 10px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 600;
-            touch-action: manipulation;
-            min-height: 44px;
-            min-width: 44px;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            box-shadow: 0 2px 8px rgba(30, 127, 67, 0.15);
-            position: relative;
-            overflow: hidden;
-        }
-        .add-form button::before {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 0;
-            height: 0;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.2);
-            transform: translate(-50%, -50%);
-            transition: width 0.4s ease, height 0.4s ease;
+            border-color: var(--btn-add-hover);
         }
         .add-form button:hover {
             background: var(--btn-add-hover);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 16px rgba(30, 127, 67, 0.25);
         }
-        .add-form button:hover::before {
-            width: 200px;
-            height: 200px;
-        }
-        .add-form button:active {
-            transform: translateY(0);
-        }
-        .add-form button:focus-visible {
-            outline: 2px solid var(--link-color);
-            outline-offset: 2px;
-        }
-        /* Clear button - large size with delete color scheme */
         .btn-clear {
-            padding: 12px 24px;
-            border-radius: 10px;
-            font-size: 14px;
-            min-height: 44px;
-            min-width: 44px;
             background: var(--btn-delete-bg);
             color: var(--btn-delete-color);
-            border: 1px solid var(--btn-delete-border);
-            font-weight: 600;
-            cursor: pointer;
-            touch-action: manipulation;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            border-color: var(--btn-delete-border);
         }
         .btn-clear:hover {
             background: var(--btn-delete-hover);
-        }
-        .btn-clear:focus-visible {
-            outline: 2px solid var(--link-color);
-            outline-offset: 2px;
         }
         .task-list {
             list-style: none;
@@ -406,7 +403,7 @@
             display: flex;
             align-items: center;
             gap: 10px;
-            padding: 14px;
+            padding: 6px 8px;
             border: 1px solid var(--border-secondary);
             border-radius: 12px;
             margin-bottom: 10px;
@@ -579,67 +576,56 @@
         .btn-fold:hover {
             background: var(--btn-fold-hover);
         }
-        /* Add button - constructive action */
-        .btn-add {
-            background: var(--btn-add-bg);
-            color: var(--btn-add-color);
-            border: 1px solid var(--btn-add-hover);
+        /* Quiet task-action language: state is carried by active Pin/Focus,
+           while Delete only becomes dangerous-looking during deliberate interaction. */
+        .btn-add,
+        .btn-delete,
+        .btn-focus,
+        .btn-set-current {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid transparent;
             font-weight: 500;
         }
-        .btn-add:hover {
-            background: var(--btn-add-hover);
+        .btn-add:hover,
+        .btn-focus:hover,
+        .btn-set-current:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+            border-color: var(--border-primary);
         }
-        /* Delete button - destructive action */
+        .btn-set-current.is-active,
+        .btn-focus.is-active {
+            background: var(--bg-current);
+            color: var(--text-primary);
+            border-color: var(--border-current);
+        }
         .btn-delete {
+            margin-left: 6px;
+        }
+        .btn-delete:hover,
+        .btn-delete:focus-visible {
             background: var(--btn-delete-bg);
             color: var(--btn-delete-color);
-            border: 1px solid var(--btn-delete-border);
-            font-weight: 500;
+            border-color: var(--btn-delete-border);
         }
-        .btn-delete:hover {
-            background: var(--btn-delete-hover);
-        }
-        /* Focus button - attention action */
-        .btn-focus {
-            background: var(--btn-focus-bg);
-            color: var(--btn-focus-color);
-            border: 1px solid var(--btn-focus-border);
-            font-weight: 500;
-        }
-        .btn-focus:hover {
-            background: var(--btn-focus-hover);
-        }
-        /* Set current button - selection action */
-        .btn-set-current {
-            background: var(--btn-current-bg);
-            color: var(--btn-current-color);
-            border: 1px solid var(--btn-current-border);
-            font-weight: 500;
-        }
-        .btn-set-current:hover {
-            background: var(--btn-current-hover);
-        }
-        /* Comments control buttons */
+        /* Toolbar chips — same shell language, slightly shorter */
         .btn-comments {
-            padding: 6px 12px;
-            border-radius: 8px;
-            font-size: 12px;
-            min-height: 24px;
-            min-width: 24px;
-            border: 1px solid var(--border-primary);
+            box-sizing: border-box;
+            padding: var(--control-pad-y) var(--control-pad-x);
+            border: var(--control-border-width) solid var(--border-primary);
+            border-radius: var(--control-radius);
+            font-size: var(--font-size-sm);
             background: var(--bg-secondary);
             color: var(--text-primary);
+            min-height: 28px;
+            height: 28px;
+            min-width: 24px;
+            line-height: 1;
             font-weight: 500;
             cursor: pointer;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             touch-action: manipulation;
-        }
-        .btn-comments:hover {
-            background: var(--bg-hover);
-        }
-        .btn-comments:focus-visible {
-            outline: 2px solid var(--link-color);
-            outline-offset: 2px;
+            transition: background-color 0.15s ease, border-color 0.15s ease;
         }
         .children {
             margin-left: 30px;
@@ -711,7 +697,7 @@
             margin: 0.5em 0;
             color: var(--text-secondary);
         }
-        .markdown-content h1, .markdown-content h2, .markdown-content h3, 
+        .markdown-content h1, .markdown-content h2, .markdown-content h3,
         .markdown-content h4, .markdown-content h5, .markdown-content h6 {
             margin: 0.8em 0 0.4em 0;
             color: var(--text-primary);
@@ -734,36 +720,29 @@
             margin: 0.5em 0;
             border-radius: 4px;
         }
-        
-        /* Theme toggle button */
+
         .theme-toggle {
-            padding: 8px 12px;
-            font-size: 14px;
-            cursor: pointer;
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-primary);
-            border-radius: 4px;
-            transition: background-color 0.2s, border-color 0.2s;
-            touch-action: manipulation;
-            min-height: 44px;
-            min-width: 44px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
         }
-        .theme-toggle:hover {
+        .theme-toggle:hover,
+        .btn-comments:hover {
             background: var(--bg-hover);
         }
-        .theme-toggle:focus-visible {
-            outline: 2px solid var(--link-color);
-            outline-offset: 2px;
+        .workspace-select {
+            cursor: pointer;
+            line-height: 1.2;
         }
-        
-        /* Workspace action buttons */
+
+        /* Workspace manager row actions — smaller chips, same radius/border tokens */
         .workspace-btn {
             padding: 4px 8px;
-            font-size: 12px;
+            font-size: var(--font-size-sm);
             background: var(--bg-secondary);
             color: var(--text-primary);
-            border: 1px solid var(--border-primary);
-            border-radius: 8px;
+            border: var(--control-border-width) solid var(--border-primary);
+            border-radius: var(--control-radius);
             cursor: pointer;
             touch-action: manipulation;
             min-height: 24px;
@@ -781,7 +760,7 @@
             color: var(--workspace-delete-color);
             border: 1px solid var(--workspace-delete-border);
         }
-        
+
         /* Screen reader only class */
         .sr-only {
             position: absolute;
@@ -794,7 +773,7 @@
             white-space: nowrap;
             border-width: 0;
         }
-        
+
         /* Select styling for dark mode */
         select {
             background-color: var(--bg-secondary);
@@ -805,7 +784,7 @@
             outline: 2px solid var(--link-color);
             outline-offset: 2px;
         }
-        
+
         /* Ensure textareas have proper styling */
         textarea {
             touch-action: manipulation;
@@ -814,12 +793,12 @@
             outline: 2px solid var(--link-color);
             outline-offset: 2px;
         }
-        
+
         /* Ensure all interactive elements have minimum touch target */
         button, a, input[type="checkbox"], input[type="radio"] {
             touch-action: manipulation;
         }
-        
+
         /* Typography - Font Size Utility Classes */
         .text-xs { font-size: var(--font-size-xs); }
         .text-sm { font-size: var(--font-size-sm); }
@@ -831,7 +810,7 @@
 </head>
 <body>
     <div id="app"></div>
-    
+
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="/static/app.js"></script>
