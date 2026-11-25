@@ -24,7 +24,7 @@ export function Outliner({ tasks, onScrollToTask, findCurrentTask, collapsedTask
           style={{
             display: 'flex',
             alignItems: 'center',
-            paddingLeft: `${depth * 16}px`,
+            paddingLeft: `${depth * 12}px`,
             paddingRight: '8px',
             paddingTop: '4px',
             paddingBottom: '4px',
@@ -99,7 +99,9 @@ export function Outliner({ tasks, onScrollToTask, findCurrentTask, collapsedTask
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
-              color: task.done ? 'var(--text-muted)' : 'var(--text-primary)',
+              color: task.done ? 'var(--text-secondary)' : 'var(--text-primary)',
+              opacity: task.done ? 0.7 : 1,
+              fontWeight: isCurrent ? 700 : 400,
               textDecoration: task.done ? 'line-through' : 'none',
               background: 'transparent',
               border: 'none',
@@ -127,7 +129,7 @@ export function Outliner({ tasks, onScrollToTask, findCurrentTask, collapsedTask
   return (
     <div
       style={{
-        width: '250px',
+        width: '290px',
         maxWidth: '100vw',
         height: 'calc(100vh - 120px)',
         maxHeight: '100vh',

@@ -12,9 +12,18 @@ A multi-workspace task management system with hierarchical structure, drag-and-d
 - Task comments/notes (Markdown support)
 - Inline task editing
 - WebSocket real-time synchronization (multi-client updates)
-- Two view modes: List view and Canvas view
+- Outline view (Outliner) showing the task hierarchy
+- Current task focus (set / clear / get the task you are working on)
 
-### MCP Server (http://localhost:8000)
+### Intended Agent Workflow
+
+Each workspace represents a project. An agent should select one small, actionable task as
+its current focus. If that task cannot be completed directly, the agent can break it into
+child tasks and repeat at any depth until it reaches executable leaf tasks. Decomposition
+is optional: agents should avoid unnecessary hierarchy and record progress on the task
+where the work occurs.
+
+### MCP Server (http://localhost:8010)
 
 **Workspace Management Tools:**
 - `get_current_workspace_name` - Get current workspace name
@@ -25,17 +34,22 @@ A multi-workspace task management system with hierarchical structure, drag-and-d
 - `rename_workspace` - Rename workspace
 
 **Task Management Tools:**
-- `list_tasks` - List all tasks in current workspace (hierarchical display)
-- `add_task` - Add new task (can specify parent_id for subtasks)
+- `list_tasks` - List tasks hierarchically with compact output, filtering, and pagination; comments are opt-in
+- `add_task` / `add_task_with_parent` - Add top-level tasks or subtasks
 - `update_task` - Update task description or comments
 - `toggle_task` - Toggle completion status
 - `delete_task` - Delete task and all subtasks
 - `get_task` - Get task details
-- `search_tasks` - Search tasks
-- `move_task` - Move task position
+- `search_tasks` - Search the current workspace with pagination and optional bounded note excerpts
+- `search_tasks_all_workspaces` - Search every workspace with compact paginated JSON output
+- `move_task_as_child` / `move_task_after` / `reorder_task` / `move_task_to_root` - Move task positions
 - `set_current_task` - Set current working task
 - `clear_current_task` - Clear current working task
 - `get_current_task` - Get current working task
+
+Broad list and search tools omit full comments by default to keep MCP responses small. Use
+`get_task` for full task details, or pass `include_comments=true` to `list_tasks` when the
+complete notes are explicitly needed.
 
 ## Tech Stack
 
@@ -191,7 +205,7 @@ After starting:
 - Web Interface: 
   - Local: http://localhost:5000
   - Network: http://<your-ip>:5000 (shown on startup if network access enabled)
-- MCP Server: http://localhost:8000/mcp
+- MCP Server: http://localhost:8010/mcp
 
 ### 5. Configure MCP Client
 
@@ -202,7 +216,7 @@ For VS Code, configure `.vscode/mcp.json`:
   "servers": {
     "fastmcp-http": {
       "type": "http",
-      "url": "http://localhost:8000/mcp"
+      "url": "http://localhost:8010/mcp"
     }
   }
 }

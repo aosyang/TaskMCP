@@ -11,11 +11,21 @@ from workspace_manager import (
     get_db
 )
 
+# This text is returned during the MCP initialization handshake, so an agent can
+# understand TaskMCP's workflow without access to this repository or README.
+MCP_INSTRUCTIONS = """TaskMCP tracks focused work within a project as an arbitrarily deep task tree.
+Treat each workspace as a project. Select one small, actionable task as the current focus.
+If a task cannot be completed directly, use child tasks to break it down and repeat only as needed;
+work from actionable leaf tasks, avoid unnecessary hierarchy, and record progress on the relevant task."""
+
+MCP_PORT = 8010
+MCP_HOST = "0.0.0.0"
+
 # Initialize FastMCP server
 # Note: FastMCP should handle type coercion by default, but Cursor's MCP client
 # may serialize integers as strings. The function implementations include
 # string-to-int conversion as a fallback.
-mcp = FastMCP("Task Manager")
+mcp = FastMCP("TaskMCP", instructions=MCP_INSTRUCTIONS)
 
 def set_current_workspace(workspace_name):
     """Set current workspace and notify"""
@@ -24,13 +34,13 @@ def set_current_workspace(workspace_name):
     notify_workspace_changed(workspace_name)
 
 # Workspace management tools
-@mcp.tool()
+@mcp.tool(output_schema=None)
 def get_current_workspace_name() -> str:
     """Get the name of the current active workspace"""
     workspace = get_current_workspace()
     return f"Current workspace: {workspace}"
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 def list_all_workspaces() -> str:
     """List all available workspaces"""
     workspaces = list_workspaces()
@@ -63,7 +73,7 @@ def list_all_workspaces() -> str:
     
     return "\n".join(result)
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 def switch_workspace(workspace_name: str) -> str:
     """Switch to a different workspace
     
@@ -83,7 +93,7 @@ def switch_workspace(workspace_name: str) -> str:
     
     return f"Switched to workspace: {workspace_name}"
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 def create_workspace(workspace_name: str) -> str:
     """Create a new workspace
     
@@ -101,7 +111,7 @@ def create_workspace(workspace_name: str) -> str:
     
     return f"Created workspace: {workspace_name}"
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 def delete_workspace(workspace_name: str) -> str:
     """Delete a workspace
     
@@ -119,7 +129,7 @@ def delete_workspace(workspace_name: str) -> str:
     os.remove(db_path)
     return f"Deleted workspace: {workspace_name}"
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 def rename_workspace(old_name: str, new_name: str) -> str:
     """Rename a workspace
     
@@ -150,32 +160,117 @@ def rename_workspace(old_name: str, new_name: str) -> str:
     return f"Renamed workspace from '{old_name}' to '{new_name}'"
 
 # Task management tools
-@mcp.tool()
-def list_tasks() -> str:
-    """List all tasks in the current workspace in hierarchical structure"""
+def _pagination_values(limit, cursor):
+    """Normalize pagination values supplied by MCP clients."""
+    limit = int(limit) if isinstance(limit, str) else limit
+    cursor = int(cursor) if isinstance(cursor, str) else cursor
+    return max(1, min(limit, 100)), max(0, cursor)
+
+
+def _as_bool(value):
+    """Normalize boolean values supplied by MCP clients."""
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _comment_excerpt(comments, query, max_chars=200):
+    """Return a bounded, single-line excerpt around a comment match."""
+    normalized = " ".join((comments or "").split())
+    if not normalized:
+        return ""
+
+    match_at = normalized.lower().find(query.lower())
+    if match_at < 0:
+        match_at = 0
+
+    before = max_chars // 3
+    start = max(0, match_at - before)
+    end = min(len(normalized), start + max_chars)
+    if end - start < max_chars:
+        start = max(0, end - max_chars)
+
+    excerpt = normalized[start:end]
+    if start > 0:
+        excerpt = "..." + excerpt
+    if end < len(normalized):
+        excerpt += "..."
+    return excerpt
+
+
+@mcp.tool(output_schema=None)
+def list_tasks(
+    include_comments: bool = False,
+    status: str = "all",
+    limit: int = 50,
+    cursor: int = 0,
+) -> str:
+    """Inspect the current project's hierarchical task tree with compact, paginated output.
+
+    Use this to find a suitable focus or understand parent/child context. Tasks may be
+    nested to any depth; actionable leaf tasks are normally the units of execution.
+
+    Args:
+        include_comments: Include full comments. Defaults to false; use get_task for details.
+        status: Filter by all, open, or done.
+        limit: Maximum tasks to return (1-100).
+        cursor: Zero-based offset for the next page.
+    """
+    include_comments = _as_bool(include_comments)
+    limit, page_cursor = _pagination_values(limit, cursor)
+    status = status.strip().lower()
+    status_aliases = {"all": "all", "open": "open", "incomplete": "open", "done": "done", "completed": "done"}
+    if status not in status_aliases:
+        return "Error: status must be one of: all, open, done"
+    status = status_aliases[status]
+
     workspace = get_current_workspace()
     conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM tasks ORDER BY position")
-    tasks = cursor.fetchall()
+    db_cursor = conn.cursor()
+    db_cursor.execute("SELECT * FROM tasks ORDER BY position")
+    tasks = db_cursor.fetchall()
     conn.close()
-    
-    # Build hierarchy
-    def format_tasks(parent_id=None, level=0):
-        result = []
+
+    flattened = []
+
+    def flatten_tasks(parent_id=None, level=0):
         for task in tasks:
             if task["parent_id"] == parent_id:
-                indent = "  " * level
-                status = "[x]" if task["done"] else "[ ]"
-                comments = f" [{task['comments']}]" if task["comments"] else ""
-                result.append(f"{indent}{status} #{task['id']} {task['task']}{comments}")
-                # Recursively add children
-                result.extend(format_tasks(task["id"], level + 1))
-        return result
-    
-    result_lines = format_tasks()
-    header = f"Tasks in workspace '{workspace}':\n"
-    return header + "\n".join(result_lines) if result_lines else f"No tasks found in workspace '{workspace}'"
+                flattened.append((task, level))
+                flatten_tasks(task["id"], level + 1)
+
+    flatten_tasks()
+    if status == "open":
+        flattened = [item for item in flattened if not item[0]["done"]]
+    elif status == "done":
+        flattened = [item for item in flattened if item[0]["done"]]
+
+    total = len(flattened)
+    page = flattened[page_cursor:page_cursor + limit]
+    if not page:
+        return f"No tasks found in workspace '{workspace}' for status '{status}'"
+
+    result_lines = []
+    for task, level in page:
+        indent = "  " * level
+        task_status = "[x]" if task["done"] else "[ ]"
+        if include_comments and task["comments"]:
+            comments = f" [{task['comments']}]"
+        elif task["comments"]:
+            comments = " [notes]"
+        else:
+            comments = ""
+        result_lines.append(f"{indent}{task_status} #{task['id']} {task['task']}{comments}")
+
+    end = page_cursor + len(page)
+    comment_mode = "included" if include_comments else "omitted; use get_task for full notes"
+    header = (
+        f"Tasks in workspace '{workspace}' "
+        f"(showing {page_cursor + 1}-{end} of {total}; comments {comment_mode}):\n"
+    )
+    if end < total:
+        result_lines.append(f"Next cursor: {end}")
+    return header + "\n".join(result_lines)
 
 def _add_task_impl(task: str, parent_id: int | None) -> str:
     """Internal implementation for adding a task"""
@@ -208,7 +303,7 @@ def _add_task_impl(task: str, parent_id: int | None) -> str:
     notify_tasks_updated()
     return f"Added task #{task_id}: {task}"
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 def add_task(task: str) -> str:
     """Add a new top-level task item to current workspace
     
@@ -217,9 +312,12 @@ def add_task(task: str) -> str:
     """
     return _add_task_impl(task, None)
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 def add_task_with_parent(task: str, parent_id: int) -> str:
-    """Add a new subtask item to current workspace
+    """Break down a task by adding one actionable child task.
+
+    A child may itself receive children, allowing decomposition to any depth. Add
+    children only when the parent cannot be completed directly; avoid needless hierarchy.
     
     Args:
         task: The task description
@@ -227,7 +325,7 @@ def add_task_with_parent(task: str, parent_id: int) -> str:
     """
     return _add_task_impl(task, parent_id)
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 def update_task(task_id: int, task: str | None = None, comments: str | None = None) -> str:
     """Update a task's description or comments
     
@@ -263,7 +361,7 @@ def update_task(task_id: int, task: str | None = None, comments: str | None = No
     notify_tasks_updated()
     return f"Updated task #{task_id}"
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 def update_task_comments_from_file(task_id: int, file_path: str) -> str:
     """Update a task's comments from a text file
     
@@ -309,7 +407,7 @@ def update_task_comments_from_file(task_id: int, file_path: str) -> str:
     notify_tasks_updated()
     return f"Updated task #{task_id} comments from file '{file_path}'"
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 def toggle_task(task_id: int) -> str:
     """Toggle a task's done status
     
@@ -328,7 +426,7 @@ def toggle_task(task_id: int) -> str:
     status = "completed" if done else "incomplete"
     return f"Task #{task_id} marked as {status}"
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 def delete_task(task_id: int) -> str:
     """Delete a task and all its subtasks
     
@@ -348,7 +446,7 @@ def delete_task(task_id: int) -> str:
     notify_tasks_updated()
     return f"Deleted task #{task_id} and its subtasks"
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 def get_task(task_id: int) -> str:
     """Get details of a specific task
     
@@ -370,79 +468,137 @@ def get_task(task_id: int) -> str:
     
     return f"Task #{task['id']} {parent}\nStatus: {status}\nTask: {task['task']}{comments}"
 
-@mcp.tool()
-def search_tasks(query: str) -> str:
+@mcp.tool(output_schema=None)
+def search_tasks(
+    query: str,
+    include_comment_snippet: bool = False,
+    limit: int = 20,
+    cursor: int = 0,
+) -> str:
     """Search tasks by description or comments
-    
+
     Args:
         query: Search term to find in task description or comments
+        include_comment_snippet: Include a bounded excerpt when the comment matched.
+        limit: Maximum matches to return (1-100).
+        cursor: Zero-based offset for the next page.
     """
+    query = query.strip()
+    if not query:
+        return "Error: query must not be empty"
+    include_comment_snippet = _as_bool(include_comment_snippet)
+    limit, page_cursor = _pagination_values(limit, cursor)
+
     conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM tasks WHERE task LIKE ? OR comments LIKE ? ORDER BY position",
-        (f"%{query}%", f"%{query}%")
+    db_cursor = conn.cursor()
+    pattern = f"%{query}%"
+    db_cursor.execute(
+        "SELECT COUNT(*) FROM tasks WHERE task LIKE ? OR comments LIKE ?",
+        (pattern, pattern)
     )
-    tasks = cursor.fetchall()
+    total = db_cursor.fetchone()[0]
+    db_cursor.execute(
+        "SELECT * FROM tasks WHERE task LIKE ? OR comments LIKE ? ORDER BY position LIMIT ? OFFSET ?",
+        (pattern, pattern, limit, page_cursor)
+    )
+    tasks = db_cursor.fetchall()
     conn.close()
-    
+
     if not tasks:
         return f"No tasks found matching '{query}'"
-    
-    result = []
+
+    result = [f"Matches for '{query}' (showing {page_cursor + 1}-{page_cursor + len(tasks)} of {total}):"]
     for task in tasks:
-        status = "[x]" if task["done"] else "[ ]"
-        result.append(f"#{task['id']} {status} {task['task']}")
-    
+        task_status = "[x]" if task["done"] else "[ ]"
+        title_match = query.lower() in task["task"].lower()
+        comment_match = query.lower() in (task["comments"] or "").lower()
+        match_source = "title+notes" if title_match and comment_match else "title" if title_match else "notes"
+        result.append(f"#{task['id']} {task_status} {task['task']} [match: {match_source}]")
+        if include_comment_snippet and comment_match:
+            result.append(f"  Note excerpt: {_comment_excerpt(task['comments'], query)}")
+
+    end = page_cursor + len(tasks)
+    if end < total:
+        result.append(f"Next cursor: {end}")
     return "\n".join(result)
 
-@mcp.tool()
-def search_tasks_all_workspaces(query: str) -> str:
+@mcp.tool(output_schema=None)
+def search_tasks_all_workspaces(
+    query: str,
+    include_comment_snippet: bool = False,
+    limit: int = 20,
+    cursor: int = 0,
+) -> str:
     """Search tasks across all workspaces
-    
+
     Args:
         query: Search term to find in task description or comments
-    
-    Returns:
-        JSON string containing array of tasks with workspace information.
-        Each task object contains: task_id, task (description), workspace_name, done (status), and optionally comments.
+        include_comment_snippet: Include a bounded excerpt when the comment matched.
+        limit: Maximum matches to return (1-100).
+        cursor: Zero-based offset for the next page.
     """
     import json
+    query = query.strip()
+    if not query:
+        return json.dumps({"error": "query must not be empty"})
+    include_comment_snippet = _as_bool(include_comment_snippet)
+    limit, page_cursor = _pagination_values(limit, cursor)
+
     results = []
     workspaces = list_workspaces()
-    
+    pattern = f"%{query}%"
+
     for workspace_name in workspaces:
         try:
             conn = get_db(workspace_name)
-            cursor = conn.cursor()
-            cursor.execute(
+            db_cursor = conn.cursor()
+            db_cursor.execute(
                 "SELECT id, task, done, comments FROM tasks WHERE task LIKE ? OR comments LIKE ? ORDER BY position",
-                (f"%{query}%", f"%{query}%")
+                (pattern, pattern)
             )
-            tasks = cursor.fetchall()
+            tasks = db_cursor.fetchall()
             conn.close()
-            
+
             for task in tasks:
-                comments = task["comments"] if task["comments"] else ""
-                results.append({
+                comments = task["comments"] or ""
+                title_match = query.lower() in task["task"].lower()
+                comment_match = query.lower() in comments.lower()
+                item = {
                     "task_id": task["id"],
                     "task": task["task"],
                     "workspace_name": workspace_name,
                     "done": bool(task["done"]),
-                    "comments": comments
-                })
-        except Exception as e:
+                    "matched_in": "title+notes" if title_match and comment_match else "title" if title_match else "notes",
+                    "has_comments": bool(comments)
+                }
+                if include_comment_snippet and comment_match:
+                    item["comment_excerpt"] = _comment_excerpt(comments, query)
+                results.append(item)
+        except Exception:
             # Skip workspaces with errors (e.g., corrupted database)
             continue
-    
-    if not results:
-        return json.dumps([])
-    
-    return json.dumps(results, ensure_ascii=False)
 
-@mcp.tool()
+    if not results:
+        return json.dumps({"query": query, "total": 0, "items": []}, ensure_ascii=False, separators=(",", ":"))
+
+    total = len(results)
+    page = results[page_cursor:page_cursor + limit]
+    payload = {
+        "query": query,
+        "total": total,
+        "cursor": page_cursor,
+        "limit": limit,
+        "next_cursor": page_cursor + len(page) if page_cursor + len(page) < total else None,
+        "items": page
+    }
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+@mcp.tool(output_schema=None)
 def set_current_task(task_id: int) -> str:
-    """Set a task as the current working task
+    """Set the one small, actionable task the agent is currently working on.
+
+    Prefer an executable leaf task. If the selected task is still too broad, create
+    child tasks and move the current focus to the appropriate child.
     
     Args:
         task_id: The ID of the task to set as current
@@ -466,7 +622,7 @@ def set_current_task(task_id: int) -> str:
     notify_tasks_updated()
     return f"Set task #{task_id} as current task: {task['task']}"
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 def clear_current_task() -> str:
     """Clear the current working task"""
     conn = get_db()
@@ -478,9 +634,13 @@ def clear_current_task() -> str:
     notify_tasks_updated()
     return "Cleared current task"
 
-@mcp.tool()
-def get_current_task() -> str:
-    """Get the current working task"""
+@mcp.tool(output_schema=None)
+def get_current_task(include_comments: bool = False) -> str:
+    """Get the current focused task; full comments are opt-in.
+
+    Use this at the start of a work session to resume the project's active unit of work.
+    """
+    include_comments = _as_bool(include_comments)
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT task_id FROM current_task WHERE id = 1")
@@ -500,7 +660,12 @@ def get_current_task() -> str:
     
     status = "[x] Done" if task["done"] else "[ ] Incomplete"
     parent = f"(subtask of #{task['parent_id']})" if task["parent_id"] else "(top-level)"
-    comments = f"\nComments (markdown): {task['comments']}" if task["comments"] else ""
+    if include_comments and task["comments"]:
+        comments = f"\nComments (markdown): {task['comments']}"
+    elif task["comments"]:
+        comments = "\nComments: available via get_task or include_comments=true"
+    else:
+        comments = ""
     
     return f"Current Task: #{task['id']} {parent}\nStatus: {status}\nTask: {task['task']}{comments}"
 
@@ -563,7 +728,7 @@ def _finalize_move(conn, task_id, new_position, new_parent_id):
     parent_desc = f"child of #{new_parent_id}" if new_parent_id else "top-level"
     return f"Moved task #{task_id} to position {new_position} as {parent_desc}"
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 def move_task_as_child(task_id: int, as_child_of: int) -> str:
     """Move a task to be a child of another task
     
@@ -614,7 +779,7 @@ def move_task_as_child(task_id: int, as_child_of: int) -> str:
     result = _finalize_move(conn, task_id, new_position, new_parent_id)
     return f"Moved task #{task_id} to be child of task #{as_child_of}"
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 def move_task_after(task_id: int, after_task_id: int) -> str:
     """Move a task to be after another task (same parent)
     
@@ -662,7 +827,7 @@ def move_task_after(task_id: int, after_task_id: int) -> str:
     parent_desc = f"child of #{new_parent_id}" if new_parent_id else "top-level"
     return f"Moved task #{task_id} to position {new_position} after task #{after_task_id} as {parent_desc}"
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 def reorder_task(task_id: int, position: int) -> str:
     """Reorder a task to a specific position within its current parent
     
@@ -704,7 +869,7 @@ def reorder_task(task_id: int, position: int) -> str:
     
     return _finalize_move(conn, task_id, new_position, new_parent_id)
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 def move_task_to_root(task_id: int) -> str:
     """Move a task to root level (make it a top-level task)
     
@@ -755,7 +920,7 @@ def move_task_to_root(task_id: int) -> str:
     
     return _finalize_move(conn, task_id, new_position, new_parent_id)
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 def find_dangling_tasks() -> str:
     """Find all dangling tasks under current workspace
     
@@ -800,7 +965,7 @@ def find_dangling_tasks() -> str:
     
     return "\n".join(result)
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 def fix_dangling_tasks() -> str:
     """Fix dangling tasks by converting them to root (top-level) tasks
     
@@ -860,4 +1025,4 @@ def fix_dangling_tasks() -> str:
     return "\n".join(result)
 
 if __name__ == "__main__":
-    mcp.run(transport="http")
+    mcp.run(transport="http", host=MCP_HOST, port=MCP_PORT)

@@ -130,6 +130,8 @@ def toggle_task(id):
     if row:
         new_done = 0 if row['done'] else 1
         conn.execute('UPDATE tasks SET done = ? WHERE id = ?', (new_done, id))
+        if new_done:
+            conn.execute('DELETE FROM current_task WHERE id = 1 AND task_id = ?', (id,))
         conn.commit()
     
     conn.close()
@@ -176,6 +178,14 @@ def reorder_tasks():
 @app.route('/set_current/<int:task_id>', methods=['POST'])
 def set_current_task(task_id):
     conn = get_db()
+    # A completed task cannot become Current.
+    row = conn.execute('SELECT done FROM tasks WHERE id = ?', (task_id,)).fetchone()
+    if row is None:
+        conn.close()
+        return jsonify({'error': 'Task not found'}), 404
+    if row['done']:
+        conn.close()
+        return jsonify({'error': 'Completed tasks cannot be current'}), 409
     # Clear existing current task and set new one
     conn.execute('DELETE FROM current_task WHERE id = 1')
     conn.execute('INSERT INTO current_task (id, task_id) VALUES (1, ?)', (task_id,))
@@ -347,9 +357,9 @@ def start_mcp_server():
     """Start MCP server in background thread"""
     # Import mcp_server module and run it
     sys.path.insert(0, os.path.dirname(__file__))
-    from mcp_server import mcp
-    print("Starting MCP server on http://localhost:8000")
-    mcp.run(transport="http")
+    from mcp_server import MCP_HOST, MCP_PORT, mcp
+    print(f"Starting MCP server on http://{MCP_HOST}:{MCP_PORT}")
+    mcp.run(transport="http", host=MCP_HOST, port=MCP_PORT)
 
 def load_server_config():
     """Load server configuration from server_config.toml"""
@@ -390,16 +400,17 @@ if __name__ == '__main__':
     # Start MCP server in background thread (only if not already running)
     try:
         import socket
+        from mcp_server import MCP_PORT
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        result = sock.connect_ex(('127.0.0.1', 8000))
+        result = sock.connect_ex(('127.0.0.1', MCP_PORT))
         sock.close()
         
         if result != 0:
-            # Port 8000 is not in use, start MCP server
+            # The MCP port is not in use, start MCP server
             mcp_thread = threading.Thread(target=start_mcp_server, daemon=True)
             mcp_thread.start()
         else:
-            print("MCP server already running on port 8000")
+            print(f"MCP server already running on port {MCP_PORT}")
     except Exception as e:
         print(f"Could not check MCP server: {e}")
     
